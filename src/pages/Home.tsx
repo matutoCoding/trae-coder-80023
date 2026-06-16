@@ -4,7 +4,7 @@ import { useAppStore } from "@/store/appStore";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
 import LockerPoolCard from "@/components/LockerPoolCard";
-import { Package, Clock, DollarSign, Boxes, ArrowRight, Plus, ScanLine, Calculator, Receipt, Settings } from "lucide-react";
+import { Package, Clock, DollarSign, Boxes, ArrowRight, Plus, ScanLine, Calculator, Receipt, Settings, BarChart3 } from "lucide-react";
 import { formatMoney } from "@/utils/api";
 
 export default function Home() {
@@ -27,6 +27,7 @@ export default function Home() {
     { label: "取件核销", icon: ScanLine, path: "/verify", color: "bg-emerald-600" },
     { label: "阶梯计费", icon: Calculator, path: "/pricing", color: "bg-amber-600" },
     { label: "账单查询", icon: Receipt, path: "/bills", color: "bg-purple-600" },
+    { label: "运营看板", icon: BarChart3, path: "/ops", color: "bg-cyan-600" },
   ];
 
   return (
@@ -91,7 +92,7 @@ export default function Home() {
 
         <section>
           <h2 className="text-sm font-semibold text-white mb-3">快捷操作</h2>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {shortcuts.map(({ label, icon: Icon, path, color }) => (
               <button
                 key={path}

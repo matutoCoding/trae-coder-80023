@@ -6,6 +6,7 @@ const CURRENT_COURIER = { id: "C001", name: "张师傅" };
 
 interface AppState {
   courier: { id: string; name: string };
+  couriers: { id: string; name: string }[];
   stats: DashboardStats | null;
   lockerVersions: Record<LockerSize, number>;
   deliveries: DeliveryRecord[];
@@ -13,7 +14,8 @@ interface AppState {
   bills: Bill[];
   refreshInterval: number | null;
 
-  setCourier: (c: { id: string; name: string }) => void;
+  setCourier: (c: { id: string; name: string } | string, name?: string) => void;
+  fetchCouriers: () => Promise<void>;
   fetchStats: () => Promise<void>;
   fetchDeliveries: () => Promise<void>;
   fetchPricing: () => Promise<void>;
@@ -24,6 +26,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   courier: CURRENT_COURIER,
+  couriers: [CURRENT_COURIER],
   stats: null,
   lockerVersions: { S: 0, M: 0, L: 0 },
   deliveries: [],
@@ -31,7 +34,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   bills: [],
   refreshInterval: null,
 
-  setCourier: (c) => set({ courier: c }),
+  setCourier: (c, name) => {
+    if (typeof c === "string" && name) {
+      set({ courier: { id: c, name } });
+    } else if (typeof c === "object" && c) {
+      set({ courier: c });
+    }
+  },
+
+  fetchCouriers: async () => {
+    try {
+      const list = await api.getCouriers();
+      set({ couriers: list });
+    } catch (e) {
+      console.error(e);
+    }
+  },
 
   fetchStats: async () => {
     try {

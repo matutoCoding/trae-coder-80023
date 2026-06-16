@@ -13,6 +13,9 @@ import type {
   BillDetail,
   LockerStatus,
   CalculateFeeResponse,
+  TimeRange,
+  OpsDashboardData,
+  TierDetail,
 } from "../../shared/types";
 
 const API_BASE = "";
@@ -36,6 +39,73 @@ export function formatMoney(amount: number): string {
 export function maskPhone(phone: string): string {
   if (phone.length !== 11) return phone;
   return phone.slice(0, 3) + "****" + phone.slice(7);
+}
+
+export function formatDateTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${d} ${h}:${min}`;
+}
+
+export function formatDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function formatCurrency(amount: number): string {
+  return `¥${amount.toFixed(2)}`;
+}
+
+function getTierLabelLocal(startDay: number, endDay: number): string {
+  if (endDay === -1) return `第${startDay}天+`;
+  if (startDay === endDay) return `第${startDay}天`;
+  return `第${startDay}-${endDay}天`;
+}
+
+export function calculateFeeLocal(
+  tiers: PricingTier[],
+  size: LockerSize,
+  days: number
+): { tierDetails: TierDetail[]; totalFee: number } {
+  const sizeTiers = tiers
+    .filter((t) => t.size === size)
+    .sort((a, b) => a.startDay - b.startDay);
+
+  const tierDetails: TierDetail[] = [];
+  let remainingDays = Math.max(1, days);
+  let totalFee = 0;
+
+  for (const tier of sizeTiers) {
+    if (remainingDays <= 0) break;
+    let daysInTier: number;
+    if (tier.endDay === -1) {
+      daysInTier = remainingDays;
+    } else {
+      const tierSpan = tier.endDay - tier.startDay + 1;
+      daysInTier = Math.min(remainingDays, tierSpan);
+    }
+    if (daysInTier > 0) {
+      const subtotal = Number((daysInTier * tier.pricePerDay).toFixed(2));
+      tierDetails.push({
+        tierId: tier.id,
+        days: daysInTier,
+        unitPrice: tier.pricePerDay,
+        subtotal,
+        tierLabel: getTierLabelLocal(tier.startDay, tier.endDay),
+      });
+      totalFee += subtotal;
+      remainingDays -= daysInTier;
+    }
+  }
+
+  return { tierDetails, totalFee: Number(totalFee.toFixed(2)) };
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -152,6 +222,27 @@ export const api = {
     return handleResponse(res);
   },
 
+  getBillExportUrl(id: string): string {
+    return `${API_BASE}/api/bills/${id}/export`;
+  },
+
+  getBillsExportUrl(params?: { period?: string; courierId?: string; status?: string }): string {
+    const qs = new URLSearchParams();
+    if (params?.period) qs.set("period", params.period);
+    if (params?.courierId) qs.set("courierId", params.courierId);
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return `${API_BASE}/api/bills/export${q ? `?${q}` : ""}`;
+  },
+
+  async getOpsDashboard(range: TimeRange, filter?: { courierId?: string; size?: LockerSize }): Promise<OpsDashboardData> {
+    const qs = new URLSearchParams({ range });
+    if (filter?.courierId) qs.set("courierId", filter.courierId);
+    if (filter?.size) qs.set("size", filter.size);
+    const res = await fetch(`${API_BASE}/api/ops/dashboard?${qs.toString()}`);
+    return handleResponse(res);
+  },
+
   async calculateFee(params: { size: LockerSize; days: number }): Promise<CalculateFeeResponse> {
     return this.getFeePreview(params.size, params.days) as Promise<CalculateFeeResponse>;
   },
@@ -168,25 +259,3 @@ export const api = {
     return this.getBillDetail(id);
   },
 };
-
-export function formatDateTime(timestamp: number): string {
-  const date = new Date(timestamp);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const h = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${d} ${h}:${min}`;
-}
-
-export function formatDate(timestamp: number): string {
-  const date = new Date(timestamp);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-export function formatCurrency(amount: number): string {
-  return `¥${amount.toFixed(2)}`;
-}

@@ -36,6 +36,23 @@ export function recommendLockerSize(dim: PackageDimensions): LockerSize {
   return 'L';
 }
 
+export function recommendAvailableLockerSize(
+  dim: PackageDimensions,
+  pools: { size: LockerSize; status: LockerStatus; available: number }[]
+): { size: LockerSize; upgraded: boolean } {
+  const base = recommendLockerSize(dim);
+  const order: LockerSize[] = ['S', 'M', 'L'];
+  const baseIdx = order.indexOf(base);
+  for (let i = baseIdx; i < order.length; i++) {
+    const s = order[i];
+    const p = pools.find((x) => x.size === s);
+    if (p && p.status === 'active' && p.available > 0) {
+      return { size: s, upgraded: i > baseIdx };
+    }
+  }
+  return { size: base, upgraded: false };
+}
+
 export function getPackageSize(dim: PackageDimensions): PackageSize {
   const size = recommendLockerSize(dim);
   if (size === 'S') return 'small';
@@ -187,6 +204,35 @@ export interface CreateDeliveryResult {
 
 export interface BillDetail extends Bill {
   details: DeliveryRecord[];
+}
+
+export type TimeRange = 'today' | 'week' | 'month';
+
+export interface OpsBreakdownItem {
+  key: string;
+  label: string;
+  deliveryCount: number;
+  pickedUpCount: number;
+  pickupRate: number;
+  overdueFee: number;
+  pendingFee: number;
+  avgDays: number;
+}
+
+export interface OpsDashboardData {
+  range: TimeRange;
+  summary: {
+    totalDeliveries: number;
+    totalPickedUp: number;
+    pickupRate: number;
+    totalOverdueFee: number;
+    totalPendingFee: number;
+    avgDays: number;
+  };
+  byCourier: OpsBreakdownItem[];
+  byLockerSize: OpsBreakdownItem[];
+  lockerTension: { size: LockerSize; label: string; total: number; available: number; rate: number; status: LockerStatus }[];
+  records: DeliveryRecord[];
 }
 
 export interface FeePreviewResponse {

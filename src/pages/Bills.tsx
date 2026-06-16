@@ -3,7 +3,7 @@ import type { Bill, BillDetail, DeliveryRecord } from "../../shared/types";
 import { useAppStore } from "@/store/appStore";
 import { api, SIZE_LABEL, formatDateTime, formatMoney, maskPhone } from "@/utils/api";
 import PageHeader from "@/components/PageHeader";
-import { Receipt, ChevronRight, Package, User, Clock, CheckCircle, Filter, Calendar, CreditCard, ChevronDown, ChevronUp, AlertCircle, X } from "lucide-react";
+import { Receipt, ChevronRight, Package, User, Clock, CheckCircle, Filter, Calendar, CreditCard, ChevronDown, ChevronUp, AlertCircle, X, Download } from "lucide-react";
 
 type BillStatusFilter = "all" | "settled" | "unsettled";
 
@@ -114,6 +114,21 @@ export default function Bills() {
                   <CreditCard size={16} className="text-primary-400" />
                   <span className="text-sm font-semibold text-white">费用汇总</span>
                 </div>
+                <button
+                  onClick={() => {
+                    const url = api.getBillsExportUrl({
+                      period: monthFilter === "all" ? undefined : monthFilter,
+                      courierId: courierFilter === "all" ? undefined : courierFilter,
+                      status: statusFilter === "all" ? undefined : statusFilter,
+                    });
+                    window.open(url, "_blank");
+                  }}
+                  disabled={filteredBills.length === 0}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-600/20 border border-primary-500/30 text-primary-300 text-[11px] font-medium hover:bg-primary-600/30 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  <Download size={12} />
+                  导出对账单
+                </button>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -292,11 +307,20 @@ export default function Bills() {
                   <p className="text-base font-bold text-white">{billDetail.courierName}</p>
                   <p className="text-xs text-primary-300">{billDetail.period} 账单</p>
                 </div>
-                <span className={`text-[11px] px-2.5 py-1 rounded-full font-medium ${
-                  billDetail.settled ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"
-                }`}>
-                  {billDetail.settled ? "已结算" : "待结算"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => window.open(api.getBillExportUrl(billDetail.id), "_blank")}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/10 border border-white/20 text-white text-[11px] font-medium hover:bg-white/20 transition"
+                  >
+                    <Download size={12} />
+                    导出详情
+                  </button>
+                  <span className={`text-[11px] px-2.5 py-1 rounded-full font-medium ${
+                    billDetail.settled ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"
+                  }`}>
+                    {billDetail.settled ? "已结算" : "待结算"}
+                  </span>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

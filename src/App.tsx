@@ -5,6 +5,7 @@ import Verify from "@/pages/Verify";
 import Pricing from "@/pages/Pricing";
 import Bills from "@/pages/Bills";
 import Lockers from "@/pages/Lockers";
+import OpsDashboard from "@/pages/OpsDashboard";
 import BottomNav from "@/components/BottomNav";
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/bills" element={<Bills />} />
           <Route path="/lockers" element={<Lockers />} />
+          <Route path="/ops" element={<OpsDashboard />} />
         </Routes>
         <BottomNav />
       </div>

@@ -15,6 +15,7 @@ import lockerRoutes from './routes/lockers.js'
 import deliveryRoutes from './routes/delivery.js'
 import pricingRoutes from './routes/pricing.js'
 import billRoutes from './routes/bills.js'
+import opsRoutes from './routes/ops.js'
 import { seedMockDeliveries } from './store/dataStore.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -37,6 +38,7 @@ app.use('/api/lockers', lockerRoutes)
 app.use('/api/delivery', deliveryRoutes)
 app.use('/api/pricing', pricingRoutes)
 app.use('/api/bills', billRoutes)
+app.use('/api/ops', opsRoutes)
 
 /**
  * health

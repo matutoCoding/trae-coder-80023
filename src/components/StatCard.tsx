@@ -4,7 +4,7 @@ interface Props {
   label: string;
   value: string | number;
   icon: LucideIcon;
-  color?: "blue" | "amber" | "green" | "rose";
+  color?: "blue" | "amber" | "green" | "rose" | "emerald" | "purple";
   suffix?: string;
 }
 
@@ -13,6 +13,8 @@ const colorMap = {
   amber: "from-amber-600/20 to-amber-800/10 border-amber-500/30 text-amber-400",
   green: "from-emerald-600/20 to-emerald-800/10 border-emerald-500/30 text-emerald-400",
   rose: "from-rose-600/20 to-rose-800/10 border-rose-500/30 text-rose-400",
+  emerald: "from-emerald-600/20 to-emerald-800/10 border-emerald-500/30 text-emerald-400",
+  purple: "from-purple-600/20 to-purple-800/10 border-purple-500/30 text-purple-400",
 };
 
 export default function StatCard({ label, value, icon: Icon, color = "blue", suffix }: Props) {

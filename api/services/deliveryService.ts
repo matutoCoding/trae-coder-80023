@@ -3,8 +3,12 @@ import type {
   DeliveryRecord,
   CreateDeliveryRequest,
   LockerPool,
+  BatchDeliveryRequest,
+  BatchDeliveryResponse,
+  BatchDeliveryResultItem,
+  PackageSize,
 } from "../../shared/types";
-import { isSizeMismatch, PACKAGE_SIZE_MAP } from "../../shared/types";
+import { isSizeMismatch, PACKAGE_SIZE_MAP, recommendLockerSize, getPackageSize } from "../../shared/types";
 import {
   dataStore,
   acquireLock,
@@ -23,6 +27,14 @@ export function getLockerPool(size: LockerSize): LockerPool | undefined {
   return dataStore.lockerPools.get(size);
 }
 
+export function toggleLockerStatus(size: LockerSize, status: "active" | "disabled"): LockerPool | undefined {
+  const pool = dataStore.lockerPools.get(size);
+  if (!pool) return undefined;
+  const updated = { ...pool, status, version: pool.version + 1 };
+  dataStore.lockerPools.set(size, updated);
+  return updated;
+}
+
 export interface CreateDeliveryResult {
   success: boolean;
   message?: string;
@@ -37,6 +49,13 @@ export function createDelivery(req: CreateDeliveryRequest): CreateDeliveryResult
 
   if (!pool) {
     return { success: false, message: "无效的格口类型" };
+  }
+
+  if (pool.status === "disabled") {
+    return {
+      success: false,
+      message: `${pool.name}已停用，暂不支持投放`,
+    };
   }
 
   if (req.packageSize && isSizeMismatch(req.packageSize, size)) {
@@ -77,6 +96,13 @@ export function createDelivery(req: CreateDeliveryRequest): CreateDeliveryResult
       };
     }
 
+    if (freshPool.status === "disabled") {
+      return {
+        success: false,
+        message: `${freshPool.name}已停用，暂不支持投放`,
+      };
+    }
+
     if (freshPool.available <= 0) {
       return {
         success: false,
@@ -113,6 +139,7 @@ export function createDelivery(req: CreateDeliveryRequest): CreateDeliveryResult
       totalDays: Math.max(1, req.expectedDays),
       tierDetails,
       totalFee,
+      packageSize: req.packageSize,
     };
 
     dataStore.lockerPools.set(size, {
@@ -128,6 +155,139 @@ export function createDelivery(req: CreateDeliveryRequest): CreateDeliveryResult
   } finally {
     releaseLock(size);
   }
+}
+
+export function createBatchDelivery(req: BatchDeliveryRequest): BatchDeliveryResponse {
+  const results: BatchDeliveryResultItem[] = [];
+  let successCount = 0;
+  let failCount = 0;
+
+  const sizes: LockerSize[] = ["S", "M", "L"];
+  for (const size of sizes) {
+    acquireLock(size);
+  }
+
+  try {
+    for (const item of req.items) {
+      const dim = { length: item.length, width: item.width, height: item.height };
+      const recommendedSize = recommendLockerSize(dim);
+      const packageSize = getPackageSize(dim);
+
+      const pool = dataStore.lockerPools.get(recommendedSize);
+      if (!pool) {
+        failCount++;
+        results.push({
+          trackingNo: item.trackingNo,
+          success: false,
+          message: "无效的格口类型",
+          recommendedLocker: recommendedSize,
+        });
+        continue;
+      }
+
+      if (pool.status === "disabled") {
+        failCount++;
+        results.push({
+          trackingNo: item.trackingNo,
+          success: false,
+          message: `${pool.name}已停用`,
+          recommendedLocker: recommendedSize,
+        });
+        continue;
+      }
+
+      if (pool.available <= 0) {
+        failCount++;
+        results.push({
+          trackingNo: item.trackingNo,
+          success: false,
+          message: "该规格格口已无可用余量",
+          recommendedLocker: recommendedSize,
+        });
+        continue;
+      }
+
+      if (!/^1\d{10}$/.test(item.recipientPhone)) {
+        failCount++;
+        results.push({
+          trackingNo: item.trackingNo,
+          success: false,
+          message: "手机号格式不正确",
+          recommendedLocker: recommendedSize,
+        });
+        continue;
+      }
+
+      if (!item.trackingNo.trim()) {
+        failCount++;
+        results.push({
+          trackingNo: item.trackingNo,
+          success: false,
+          message: "快递单号不能为空",
+          recommendedLocker: recommendedSize,
+        });
+        continue;
+      }
+
+      const usedCount = pool.total - pool.available;
+      const lockerNo = generateLockerNo(recommendedSize, usedCount + 1);
+
+      let pickupCode = generatePickupCode();
+      let codeAttempts = 0;
+      while (dataStore.pickupCodeIndex.has(pickupCode) && codeAttempts < 10) {
+        pickupCode = generatePickupCode();
+        codeAttempts++;
+      }
+
+      const deliveryTime = Date.now();
+      const { tierDetails, totalFee } = calculateFee(recommendedSize, Math.max(1, item.expectedDays));
+
+      const record: DeliveryRecord = {
+        id: generateId("del"),
+        trackingNo: item.trackingNo.trim(),
+        courierId: req.courierId,
+        courierName: req.courierName,
+        lockerSize: recommendedSize,
+        lockerNo,
+        pickupCode,
+        recipientPhone: item.recipientPhone,
+        deliveryTime,
+        status: "in_transit",
+        totalDays: Math.max(1, item.expectedDays),
+        tierDetails,
+        totalFee,
+        packageSize: packageSize as PackageSize,
+      };
+
+      dataStore.lockerPools.set(recommendedSize, {
+        ...pool,
+        available: pool.available - 1,
+        version: pool.version + 1,
+      });
+
+      dataStore.deliveryRecords.set(record.id, record);
+      dataStore.pickupCodeIndex.set(pickupCode, record.id);
+
+      successCount++;
+      results.push({
+        trackingNo: item.trackingNo,
+        success: true,
+        record,
+        recommendedLocker: recommendedSize,
+      });
+    }
+  } finally {
+    for (const size of sizes) {
+      releaseLock(size);
+    }
+  }
+
+  return {
+    successCount,
+    failCount,
+    results,
+    currentPools: getLockerPools(),
+  };
 }
 
 export function getDeliveries(courierId?: string): DeliveryRecord[] {

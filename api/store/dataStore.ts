@@ -4,9 +4,9 @@ const lockerLocks: Record<LockerSize, boolean> = { S: false, M: false, L: false 
 
 export const dataStore = {
   lockerPools: new Map<LockerSize, LockerPool>([
-    ["S", { size: "S", name: "小号格口", total: 20, available: 15, version: 0 }],
-    ["M", { size: "M", name: "中号格口", total: 15, available: 10, version: 0 }],
-    ["L", { size: "L", name: "大号格口", total: 8, available: 5, version: 0 }],
+    ["S", { size: "S", name: "小号格口", total: 20, available: 15, version: 0, status: "active" }],
+    ["M", { size: "M", name: "中号格口", total: 15, available: 10, version: 0, status: "active" }],
+    ["L", { size: "L", name: "大号格口", total: 8, available: 5, version: 0, status: "active" }],
   ]),
 
   pricingTiers: new Map<string, PricingTier>([

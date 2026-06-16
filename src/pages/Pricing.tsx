@@ -1,14 +1,54 @@
-import { useEffect, useState } from "react";
-import type { LockerSize, PricingTier, CalculateFeeResponse } from "../../shared/types";
+import { useEffect, useState, useMemo } from "react";
+import type { LockerSize, PricingTier, TierDetail } from "../../shared/types";
 import { useAppStore } from "@/store/appStore";
 import { api, SIZE_LABEL, formatMoney } from "@/utils/api";
 import PageHeader from "@/components/PageHeader";
-import { Calculator, Plus, Trash2, Save, Sparkles, TrendingUp, AlertTriangle } from "lucide-react";
+import { Calculator, Plus, Trash2, Save, Sparkles, TrendingUp, AlertTriangle, Info } from "lucide-react";
 
 interface ValidationError {
   type: "gap" | "overlap" | "price_desc" | "start_day";
   message: string;
   idx?: number;
+}
+
+function getTierLabel(startDay: number, endDay: number): string {
+  if (endDay === -1) return `第${startDay}天+`;
+  if (startDay === endDay) return `第${startDay}天`;
+  return `第${startDay}-${endDay}天`;
+}
+
+function calculateFeeLocal(tiers: PricingTier[], days: number): { tierDetails: TierDetail[]; totalFee: number } {
+  const sortedTiers = [...tiers].sort((a, b) => a.startDay - b.startDay);
+  const tierDetails: TierDetail[] = [];
+  let remainingDays = Math.max(1, days);
+  let totalFee = 0;
+
+  for (const tier of sortedTiers) {
+    if (remainingDays <= 0) break;
+
+    let daysInTier: number;
+    if (tier.endDay === -1) {
+      daysInTier = remainingDays;
+    } else {
+      const tierSpan = tier.endDay - tier.startDay + 1;
+      daysInTier = Math.min(remainingDays, tierSpan);
+    }
+
+    if (daysInTier > 0) {
+      const subtotal = Number((daysInTier * tier.pricePerDay).toFixed(2));
+      tierDetails.push({
+        tierId: tier.id,
+        days: daysInTier,
+        unitPrice: tier.pricePerDay,
+        subtotal,
+        tierLabel: getTierLabel(tier.startDay, tier.endDay),
+      });
+      totalFee += subtotal;
+      remainingDays -= daysInTier;
+    }
+  }
+
+  return { tierDetails, totalFee: Number(totalFee.toFixed(2)) };
 }
 
 function validateTiers(tiers: PricingTier[]): ValidationError[] {
@@ -58,10 +98,10 @@ export default function Pricing() {
   const [tiers, setTiers] = useState<PricingTier[]>([]);
   const [previewSize, setPreviewSize] = useState<LockerSize>("M");
   const [previewDays, setPreviewDays] = useState(5);
-  const [previewResult, setPreviewResult] = useState<CalculateFeeResponse | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [useLivePreview, setUseLivePreview] = useState(true);
 
   useEffect(() => {
     fetchPricing();
@@ -75,12 +115,20 @@ export default function Pricing() {
   }, [pricingTiers, activeSize]);
 
   useEffect(() => {
-    api.calculateFee({ size: previewSize, days: previewDays }).then(setPreviewResult).catch(() => {});
-  }, [previewSize, previewDays, pricingTiers]);
-
-  useEffect(() => {
     setValidationErrors(validateTiers(tiers));
   }, [tiers]);
+
+  const previewTiers = useMemo(() => {
+    if (!useLivePreview || previewSize !== activeSize) {
+      return pricingTiers.filter((t) => t.size === previewSize).sort((a, b) => a.startDay - b.startDay);
+    }
+    return tiers;
+  }, [useLivePreview, previewSize, activeSize, tiers, pricingTiers]);
+
+  const previewResult = useMemo(() => {
+    if (previewTiers.length === 0) return null;
+    return calculateFeeLocal(previewTiers, previewDays);
+  }, [previewTiers, previewDays]);
 
   const updateTier = (idx: number, field: "startDay" | "endDay" | "pricePerDay", value: number) => {
     setTiers((prev) => {
@@ -139,14 +187,28 @@ export default function Pricing() {
 
       <div className="container mx-auto px-4 py-5 space-y-5">
         <section className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/20">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center">
-              <Calculator size={18} className="text-amber-400" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                <Calculator size={18} className="text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">费用预览器</h3>
+                <p className="text-[11px] text-industrial-400">
+                  {useLivePreview && previewSize === activeSize ? "实时预览 · 随编辑更新" : "按保存后档位计算"}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-white">费用预览器</h3>
-              <p className="text-[11px] text-industrial-400">按真实档位计算，第N天落在哪档就按哪档单价</p>
-            </div>
+            <button
+              onClick={() => setUseLivePreview(!useLivePreview)}
+              className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition ${
+                useLivePreview
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : "bg-industrial-700 text-industrial-400"
+              }`}
+            >
+              {useLivePreview ? "实时开" : "实时关"}
+            </button>
           </div>
 
           <div className="grid grid-cols-3 gap-2 mb-3">
@@ -178,7 +240,7 @@ export default function Pricing() {
             <span className="text-lg font-bold font-display text-amber-400 w-14 text-right">{previewDays}天</span>
           </div>
 
-          {previewResult && (
+          {previewResult && previewResult.tierDetails.length > 0 ? (
             <div className="p-4 rounded-xl bg-industrial-900/60 border border-industrial-700">
               <div className="space-y-2 mb-3">
                 {previewResult.tierDetails.map((t, i) => (
@@ -202,6 +264,20 @@ export default function Pricing() {
                 </span>
                 <span className="text-2xl font-bold font-display text-amber-400">{formatMoney(previewResult.totalFee)}</span>
               </div>
+            </div>
+          ) : (
+            <div className="p-6 text-center rounded-xl bg-industrial-900/40 border border-industrial-700">
+              <Info size={20} className="mx-auto mb-2 text-industrial-500" />
+              <p className="text-xs text-industrial-400">暂无档位数据，请先配置档位</p>
+            </div>
+          )}
+
+          {useLivePreview && previewSize === activeSize && validationErrors.length > 0 && (
+            <div className="mt-3 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30">
+              <p className="text-[11px] text-rose-300 flex items-center gap-1">
+                <AlertTriangle size={12} />
+                档位配置有问题，预览可能不准确
+              </p>
             </div>
           )}
         </section>

@@ -4,7 +4,7 @@ import { useAppStore } from "@/store/appStore";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
 import LockerPoolCard from "@/components/LockerPoolCard";
-import { Package, Clock, DollarSign, Boxes, ArrowRight, Plus, ScanLine, Calculator, Receipt } from "lucide-react";
+import { Package, Clock, DollarSign, Boxes, ArrowRight, Plus, ScanLine, Calculator, Receipt, Settings } from "lucide-react";
 import { formatMoney } from "@/utils/api";
 
 export default function Home() {
@@ -67,10 +67,13 @@ export default function Home() {
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-white">格口余量</h2>
-            <span className="text-[11px] text-industrial-400 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              实时同步
-            </span>
+            <button
+              onClick={() => navigate("/lockers")}
+              className="flex items-center gap-1 text-[11px] text-primary-400 hover:text-primary-300"
+            >
+              <Settings size={12} />
+              管理
+            </button>
           </div>
           <div className="space-y-3">
             {stats?.lockerPools.map((pool) => (

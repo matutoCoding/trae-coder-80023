@@ -1,6 +1,12 @@
 import { Router } from "express";
-import type { CreateDeliveryRequest } from "../../shared/types";
-import { createDelivery, getDeliveries, verifyPickup, findDeliveryByPickupCode } from "../services/deliveryService";
+import type { CreateDeliveryRequest, BatchDeliveryRequest } from "../../shared/types";
+import {
+  createDelivery,
+  getDeliveries,
+  verifyPickup,
+  findDeliveryByPickupCode,
+  createBatchDelivery,
+} from "../services/deliveryService";
 
 const router = Router();
 
@@ -19,6 +25,18 @@ router.post("/", (req, res) => {
   if (!result.success) {
     return res.status(result.conflict ? 409 : 400).json(result);
   }
+  res.json(result);
+});
+
+router.post("/batch", (req, res) => {
+  const body = req.body as BatchDeliveryRequest;
+  if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
+    return res.status(400).json({ success: false, message: "请至少录入一件快递" });
+  }
+  if (!body.courierId || !body.courierName) {
+    return res.status(400).json({ success: false, message: "快递员信息不完整" });
+  }
+  const result = createBatchDelivery(body);
   res.json(result);
 });
 

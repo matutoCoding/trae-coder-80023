@@ -4,6 +4,7 @@ import Delivery from "@/pages/Delivery";
 import Verify from "@/pages/Verify";
 import Pricing from "@/pages/Pricing";
 import Bills from "@/pages/Bills";
+import Lockers from "@/pages/Lockers";
 import BottomNav from "@/components/BottomNav";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/verify" element={<Verify />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/bills" element={<Bills />} />
+          <Route path="/lockers" element={<Lockers />} />
         </Routes>
         <BottomNav />
       </div>

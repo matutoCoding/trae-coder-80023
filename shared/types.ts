@@ -2,6 +2,8 @@ export type LockerSize = 'S' | 'M' | 'L';
 
 export type PackageSize = 'small' | 'medium' | 'large';
 
+export type LockerStatus = 'active' | 'disabled';
+
 export interface PackageDimensions {
   length: number;
   width: number;
@@ -28,9 +30,17 @@ export const PACKAGE_SIZE_DESC: Record<PackageSize, string> = {
 
 export function recommendLockerSize(dim: PackageDimensions): LockerSize {
   const maxDim = Math.max(dim.length, dim.width, dim.height);
+  if (maxDim <= 0) return 'M';
   if (maxDim <= 20) return 'S';
   if (maxDim <= 40) return 'M';
   return 'L';
+}
+
+export function getPackageSize(dim: PackageDimensions): PackageSize {
+  const size = recommendLockerSize(dim);
+  if (size === 'S') return 'small';
+  if (size === 'M') return 'medium';
+  return 'large';
 }
 
 export function isSizeMismatch(packageSize: PackageSize, lockerSize: LockerSize): boolean {
@@ -45,6 +55,7 @@ export interface LockerPool {
   total: number;
   available: number;
   version: number;
+  status: LockerStatus;
 }
 
 export interface PricingTier {
@@ -78,6 +89,7 @@ export interface DeliveryRecord {
   totalDays: number;
   tierDetails: TierDetail[];
   totalFee: number;
+  packageSize?: PackageSize;
 }
 
 export interface Bill {
@@ -86,8 +98,11 @@ export interface Bill {
   courierName: string;
   period: string;
   totalDeliveries: number;
+  pickedUpCount: number;
+  inTransitCount: number;
   totalFee: number;
   settled: boolean;
+  settledAt?: number;
   records: string[];
 }
 
@@ -97,6 +112,7 @@ export interface DashboardStats {
   inTransitCount: number;
   pendingFees: number;
   totalCapacity: number;
+  disabledCount: number;
 }
 
 export interface CalculateFeeRequest {
@@ -120,10 +136,60 @@ export interface CreateDeliveryRequest {
   version: Record<LockerSize, number>;
 }
 
+export interface BatchDeliveryItem {
+  trackingNo: string;
+  recipientPhone: string;
+  length: number;
+  width: number;
+  height: number;
+  expectedDays: number;
+}
+
+export interface BatchDeliveryRequest {
+  courierId: string;
+  courierName: string;
+  items: BatchDeliveryItem[];
+  version: Record<LockerSize, number>;
+}
+
+export interface BatchDeliveryResultItem {
+  trackingNo: string;
+  success: boolean;
+  message?: string;
+  record?: DeliveryRecord;
+  recommendedLocker?: LockerSize;
+}
+
+export interface BatchDeliveryResponse {
+  successCount: number;
+  failCount: number;
+  results: BatchDeliveryResultItem[];
+  currentPools?: LockerPool[];
+}
+
 export interface VerifyPickupRequest {
   pickupCode: string;
 }
 
 export interface VerifyPickupResponse {
   record: DeliveryRecord;
+}
+
+export type BillFilter = 'all' | 'settled' | 'unsettled';
+
+export interface CreateDeliveryResult {
+  success: boolean;
+  message?: string;
+  record?: DeliveryRecord;
+  conflict?: boolean;
+  currentPools?: LockerPool[];
+}
+
+export interface BillDetail extends Bill {
+  details: DeliveryRecord[];
+}
+
+export interface FeePreviewResponse {
+  tierDetails: TierDetail[];
+  totalFee: number;
 }

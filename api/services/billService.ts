@@ -14,6 +14,7 @@ export function getDashboardStats(): DashboardStats {
   const inTransit = deliveries.filter((d) => d.status === "in_transit");
   const pendingFees = inTransit.reduce((sum, d) => sum + d.totalFee, 0);
   const totalCapacity = lockerPools.reduce((sum, p) => sum + p.total, 0);
+  const disabledCount = lockerPools.filter((p) => p.status === "disabled").length;
 
   return {
     lockerPools,
@@ -21,6 +22,7 @@ export function getDashboardStats(): DashboardStats {
     inTransitCount: inTransit.length,
     pendingFees: Number(pendingFees.toFixed(2)),
     totalCapacity,
+    disabledCount,
   };
 }
 
@@ -41,15 +43,23 @@ export function generateBills(): Bill[] {
 
   for (const [courierId, records] of courierMap) {
     const totalDeliveries = records.length;
+    const pickedUpCount = records.filter((r) => r.status === "picked_up").length;
+    const inTransitCount = records.filter((r) => r.status === "in_transit").length;
     const totalFee = records.reduce((sum, r) => sum + r.totalFee, 0);
+
+    const existingBill = dataStore.bills.get(`bill_${courierId}_${period}`);
+
     const bill: Bill = {
       id: `bill_${courierId}_${period}`,
       courierId,
       courierName: records[0]?.courierName || courierId,
       period,
       totalDeliveries,
+      pickedUpCount,
+      inTransitCount,
       totalFee: Number(totalFee.toFixed(2)),
-      settled: false,
+      settled: existingBill?.settled ?? false,
+      settledAt: existingBill?.settledAt,
       records: records.map((r) => r.id),
     };
     bills.push(bill);
@@ -66,4 +76,30 @@ export function getBills(): Bill[] {
 export function getBillById(id: string): Bill | undefined {
   generateBills();
   return dataStore.bills.get(id);
+}
+
+export function settleBill(id: string): { success: boolean; bill?: Bill; message?: string } {
+  const bill = getBillById(id);
+  if (!bill) {
+    return { success: false, message: "账单不存在" };
+  }
+  if (bill.settled) {
+    return { success: false, message: "账单已结算，无需重复结算" };
+  }
+  const updated: Bill = {
+    ...bill,
+    settled: true,
+    settledAt: Date.now(),
+  };
+  dataStore.bills.set(id, updated);
+  return { success: true, bill: updated };
+}
+
+export function getAvailableCouriers(): { id: string; name: string }[] {
+  const deliveries = getDeliveries();
+  const courierMap = new Map<string, string>();
+  for (const d of deliveries) {
+    courierMap.set(d.courierId, d.courierName);
+  }
+  return Array.from(courierMap.entries()).map(([id, name]) => ({ id, name }));
 }

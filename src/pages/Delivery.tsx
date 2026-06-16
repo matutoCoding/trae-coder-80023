@@ -1,11 +1,33 @@
 import { useEffect, useState, useMemo } from "react";
-import type { LockerSize, DeliveryRecord, CalculateFeeResponse, PackageSize } from "../../shared/types";
-import { PACKAGE_SIZE_MAP, PACKAGE_SIZE_LABEL, PACKAGE_SIZE_DESC, isSizeMismatch } from "../../shared/types";
+import type { LockerSize, DeliveryRecord, CalculateFeeResponse, PackageSize, BatchDeliveryResultItem } from "../../shared/types";
+import { recommendLockerSize, getPackageSize, PACKAGE_SIZE_LABEL, PACKAGE_SIZE_DESC, isSizeMismatch } from "../../shared/types";
 import { useAppStore } from "@/store/appStore";
 import { api, SIZE_LABEL, SIZE_DESC, formatDateTime, formatMoney, maskPhone } from "@/utils/api";
 import PageHeader from "@/components/PageHeader";
 import LockerPoolCard from "@/components/LockerPoolCard";
-import { Plus, X, Package, Phone, Calendar, CheckCircle, Clock, AlertCircle, Copy, Key, Sparkles, Ruler } from "lucide-react";
+import { Plus, X, Package, Phone, Calendar, CheckCircle, Clock, AlertCircle, Copy, Key, Sparkles, Ruler, Layers, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+
+interface BatchItemForm {
+  id: string;
+  trackingNo: string;
+  recipientPhone: string;
+  length: number;
+  width: number;
+  height: number;
+  expectedDays: number;
+}
+
+function createEmptyBatchItem(): BatchItemForm {
+  return {
+    id: `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    trackingNo: "",
+    recipientPhone: "",
+    length: 0,
+    width: 0,
+    height: 0,
+    expectedDays: 1,
+  };
+}
 
 export default function Delivery() {
   const stats = useAppStore((s) => s.stats);
@@ -17,8 +39,12 @@ export default function Delivery() {
   const startPolling = useAppStore((s) => s.startPolling);
   const stopPolling = useAppStore((s) => s.stopPolling);
 
+  const [mode, setMode] = useState<"single" | "batch">("single");
   const [showModal, setShowModal] = useState(false);
-  const [packageSize, setPackageSize] = useState<PackageSize>("medium");
+
+  const [length, setLength] = useState(20);
+  const [width, setWidth] = useState(15);
+  const [height, setHeight] = useState(10);
   const [selectedSize, setSelectedSize] = useState<LockerSize>("M");
   const [trackingNo, setTrackingNo] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
@@ -29,10 +55,26 @@ export default function Delivery() {
   const [successRecord, setSuccessRecord] = useState<DeliveryRecord | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const recommendedSize = useMemo(() => PACKAGE_SIZE_MAP[packageSize], [packageSize]);
+  const [batchItems, setBatchItems] = useState<BatchItemForm[]>([]);
+  const [batchResult, setBatchResult] = useState<BatchDeliveryResultItem[] | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchError, setBatchError] = useState("");
+  const [expandedBatchIndex, setExpandedBatchIndex] = useState<number | null>(null);
+
+  const recommendedSize = useMemo(() => {
+    if (length <= 0 || width <= 0 || height <= 0) return "M" as LockerSize;
+    return recommendLockerSize({ length, width, height });
+  }, [length, width, height]);
+
+  const packageSize = useMemo(() => {
+    if (length <= 0 || width <= 0 || height <= 0) return "medium" as PackageSize;
+    return getPackageSize({ length, width, height });
+  }, [length, width, height]);
+
   const mismatchWarning = useMemo(() => {
-    if (!packageSize) return null;
-    return isSizeMismatch(packageSize, selectedSize) ? "包裹尺寸偏大，当前格口可能放不下，建议选择推荐规格" : null;
+    return isSizeMismatch(packageSize, selectedSize)
+      ? "包裹尺寸偏大，当前格口可能放不下，建议选择推荐规格"
+      : null;
   }, [packageSize, selectedSize]);
 
   useEffect(() => {
@@ -43,20 +85,22 @@ export default function Delivery() {
   }, [fetchStats, fetchDeliveries, startPolling, stopPolling]);
 
   useEffect(() => {
-    if (showModal) {
+    if (showModal && mode === "single") {
       api.calculateFee({ size: selectedSize, days: expectedDays }).then(setFeePreview).catch(() => {});
     }
-  }, [showModal, selectedSize, expectedDays]);
+  }, [showModal, selectedSize, expectedDays, mode]);
 
   useEffect(() => {
-    if (packageSize) {
+    if (mode === "single" && recommendedSize) {
       setSelectedSize(recommendedSize);
     }
-  }, [packageSize, recommendedSize]);
+  }, [recommendedSize, mode]);
 
-  const openModal = () => {
-    setPackageSize("medium");
-    setSelectedSize("M");
+  const openSingleModal = () => {
+    setMode("single");
+    setLength(20);
+    setWidth(15);
+    setHeight(10);
     setTrackingNo("");
     setRecipientPhone("");
     setExpectedDays(1);
@@ -65,9 +109,27 @@ export default function Delivery() {
     setShowModal(true);
   };
 
+  const openBatchModal = () => {
+    setMode("batch");
+    setBatchItems([createEmptyBatchItem(), createEmptyBatchItem()]);
+    setBatchResult(null);
+    setBatchError("");
+    setExpandedBatchIndex(null);
+    setShowModal(true);
+  };
+
   const openModalWithSize = (size: LockerSize) => {
-    const pkgMap: Record<LockerSize, PackageSize> = { S: "small", M: "medium", L: "large" };
-    setPackageSize(pkgMap[size]);
+    if (stats?.lockerPools.find(p => p.size === size)?.status === "disabled") return;
+    setMode("single");
+    const dimMap: Record<LockerSize, { l: number; w: number; h: number }> = {
+      S: { l: 15, w: 10, h: 8 },
+      M: { l: 30, w: 20, h: 15 },
+      L: { l: 50, w: 40, h: 30 },
+    };
+    const d = dimMap[size];
+    setLength(d.l);
+    setWidth(d.w);
+    setHeight(d.h);
     setSelectedSize(size);
     setTrackingNo("");
     setRecipientPhone("");
@@ -77,10 +139,14 @@ export default function Delivery() {
     setShowModal(true);
   };
 
-  const handleSubmit = async () => {
+  const handleSingleSubmit = async () => {
     if (!trackingNo.trim()) return setError("请输入快递单号");
     if (!/^1\d{10}$/.test(recipientPhone)) return setError("请输入正确的手机号");
+    if (length <= 0 || width <= 0 || height <= 0) return setError("请输入有效的长宽高");
     if (isSizeMismatch(packageSize, selectedSize)) return setError("格口规格与包裹尺寸不匹配，请选择推荐规格或更大的格口");
+
+    const pool = stats?.lockerPools.find(p => p.size === selectedSize);
+    if (pool?.status === "disabled") return setError("该格口规格已停用");
 
     setLoading(true);
     setError("");
@@ -154,29 +220,104 @@ export default function Delivery() {
     }
   };
 
+  const addBatchItem = () => {
+    setBatchItems((prev) => [...prev, createEmptyBatchItem()]);
+  };
+
+  const removeBatchItem = (id: string) => {
+    if (batchItems.length <= 1) return;
+    setBatchItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const updateBatchItem = (id: string, field: keyof BatchItemForm, value: string | number) => {
+    setBatchItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+  };
+
+  const getBatchItemRecommended = (item: BatchItemForm): LockerSize => {
+    if (item.length <= 0 || item.width <= 0 || item.height <= 0) return "M";
+    return recommendLockerSize({ length: item.length, width: item.width, height: item.height });
+  };
+
+  const handleBatchSubmit = async () => {
+    const validItems = batchItems.filter(
+      (item) => item.trackingNo.trim() && /^1\d{10}$/.test(item.recipientPhone) && item.length > 0 && item.width > 0 && item.height > 0
+    );
+
+    if (validItems.length === 0) {
+      setBatchError("请至少录入一件完整的快递信息");
+      return;
+    }
+
+    setBatchLoading(true);
+    setBatchError("");
+    setBatchResult(null);
+
+    try {
+      const res = await api.batchDelivery({
+        courierId: courier.id,
+        courierName: courier.name,
+        items: validItems.map((item) => ({
+          trackingNo: item.trackingNo,
+          recipientPhone: item.recipientPhone,
+          length: Number(item.length),
+          width: Number(item.width),
+          height: Number(item.height),
+          expectedDays: Number(item.expectedDays),
+        })),
+        version: lockerVersions,
+      });
+
+      setBatchResult(res.results);
+      await fetchStats();
+      await fetchDeliveries();
+    } catch (e: any) {
+      setBatchError(e?.message || "批量投放失败");
+    }
+    setBatchLoading(false);
+  };
+
   const inTransitList = deliveries.filter((d) => d.status === "in_transit");
+
+  const batchStats = useMemo(() => {
+    if (!batchResult) return null;
+    const success = batchResult.filter((r) => r.success).length;
+    const fail = batchResult.filter((r) => !r.success).length;
+    return { success, fail, total: batchResult.length };
+  }, [batchResult]);
 
   return (
     <div className="min-h-screen">
       <PageHeader title="投放管理" subtitle="选择格口投放快递" />
 
       <div className="container mx-auto px-4 py-5 space-y-5">
-        <button
-          onClick={openModal}
-          className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold shadow-lg hover:shadow-primary-500/25 transition-all active:scale-[0.99]"
-        >
-          <Plus size={20} />
-          新增投放
-        </button>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={openSingleModal}
+            className="flex flex-col items-center justify-center gap-2 py-5 rounded-xl bg-gradient-to-br from-primary-600 to-primary-700 text-white font-semibold shadow-lg hover:shadow-primary-500/25 transition-all active:scale-[0.99]"
+          >
+            <Plus size={24} />
+            <span>单件投放</span>
+            <span className="text-[10px] font-normal opacity-80">录入长宽高自动推荐</span>
+          </button>
+          <button
+            onClick={openBatchModal}
+            className="flex flex-col items-center justify-center gap-2 py-5 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-700 text-white font-semibold shadow-lg hover:shadow-indigo-500/25 transition-all active:scale-[0.99]"
+          >
+            <Layers size={24} />
+            <span>批量录入</span>
+            <span className="text-[10px] font-normal opacity-80">多件包裹一次性提交</span>
+          </button>
+        </div>
 
         <section>
-          <h2 className="text-sm font-semibold text-white mb-3">选择格口规格</h2>
+          <h2 className="text-sm font-semibold text-white mb-3">格口余量</h2>
           <div className="space-y-3">
             {stats?.lockerPools.map((pool) => (
               <button
                 key={pool.size}
                 onClick={() => openModalWithSize(pool.size)}
-                className="w-full text-left"
+                disabled={pool.status === "disabled"}
+                className={`w-full text-left ${pool.status === "disabled" ? "cursor-not-allowed" : ""}`}
               >
                 <LockerPoolCard pool={pool} />
               </button>
@@ -244,19 +385,24 @@ export default function Delivery() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={() => !successRecord && setShowModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={() => !successRecord && !batchResult && setShowModal(false)}>
           <div
             className="w-full max-w-[480px] bg-industrial-900 rounded-t-2xl max-h-[90vh] overflow-y-auto scrollbar-hide"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="sticky top-0 flex items-center justify-between px-5 py-4 bg-industrial-900 border-b border-industrial-800 z-10">
-              <h3 className="font-bold text-white">{successRecord ? "投放成功" : "新增投放"}</h3>
+              <div className="flex items-center gap-2">
+                {mode === "batch" ? <Layers size={18} className="text-indigo-400" /> : <Plus size={18} className="text-primary-400" />}
+                <h3 className="font-bold text-white">
+                  {successRecord ? "投放成功" : batchResult ? "批量投放结果" : mode === "batch" ? "批量录入投放" : "新增投放"}
+                </h3>
+              </div>
               <button onClick={() => setShowModal(false)} className="p-1.5 rounded-lg hover:bg-industrial-800 text-industrial-400">
                 <X size={20} />
               </button>
             </div>
 
-            {successRecord ? (
+            {mode === "single" && successRecord ? (
               <div className="p-5">
                 <div className="flex flex-col items-center py-4">
                   <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mb-4 animate-float">
@@ -293,56 +439,76 @@ export default function Delivery() {
                   完成
                 </button>
               </div>
-            ) : (
+            ) : mode === "single" ? (
               <div className="p-5 space-y-4">
                 <div>
-                  <label className="text-xs text-industrial-400 mb-2 block">包裹大小</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["small", "medium", "large"] as PackageSize[]).map((ps) => (
-                      <button
-                        key={ps}
-                        onClick={() => setPackageSize(ps)}
-                        className={`p-3 rounded-xl border-2 transition text-center ${
-                          packageSize === ps
-                            ? "border-amber-500 bg-amber-500/10"
-                            : "border-industrial-700 bg-industrial-800/50 hover:border-industrial-600"
-                        }`}
-                      >
-                        <Ruler size={16} className={`mx-auto mb-1 ${packageSize === ps ? "text-amber-400" : "text-industrial-500"}`} />
-                        <p className="text-sm font-bold text-white">{PACKAGE_SIZE_LABEL[ps]}</p>
-                        <p className="text-[10px] text-industrial-400 mt-0.5">{PACKAGE_SIZE_DESC[ps]}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs text-industrial-400">格口规格</label>
+                    <label className="text-xs text-industrial-400">包裹尺寸 (cm)</label>
                     <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
                       <Sparkles size={12} className="text-emerald-400" />
                       <span className="text-[11px] text-emerald-400">推荐 {SIZE_LABEL[recommendedSize]}</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[10px] text-industrial-500 mb-1 block">长</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={length}
+                        onChange={(e) => setLength(Math.max(0, Number(e.target.value)))}
+                        className="w-full px-3 py-2 rounded-lg bg-industrial-800 border border-industrial-700 text-white text-sm text-center focus:border-primary-500 focus:outline-none transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-industrial-500 mb-1 block">宽</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={width}
+                        onChange={(e) => setWidth(Math.max(0, Number(e.target.value)))}
+                        className="w-full px-3 py-2 rounded-lg bg-industrial-800 border border-industrial-700 text-white text-sm text-center focus:border-primary-500 focus:outline-none transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-industrial-500 mb-1 block">高</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={height}
+                        onChange={(e) => setHeight(Math.max(0, Number(e.target.value)))}
+                        className="w-full px-3 py-2 rounded-lg bg-industrial-800 border border-industrial-700 text-white text-sm text-center focus:border-primary-500 focus:outline-none transition"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-industrial-500 mt-1.5">
+                    <Ruler size={10} className="inline mr-1" />
+                    {PACKAGE_SIZE_LABEL[packageSize]} · {PACKAGE_SIZE_DESC[packageSize]}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs text-industrial-400 mb-2 block">格口规格</label>
+                  <div className="grid grid-cols-3 gap-2">
                     {(["S", "M", "L"] as LockerSize[]).map((s) => {
                       const pool = stats?.lockerPools.find((p) => p.size === s);
                       const isRecommended = s === recommendedSize;
                       const isTooSmall = isSizeMismatch(packageSize, s);
+                      const isDisabled = pool?.status === "disabled";
                       return (
                         <button
                           key={s}
-                          onClick={() => setSelectedSize(s)}
-                          disabled={pool && pool.available <= 0}
+                          onClick={() => !isDisabled && setSelectedSize(s)}
+                          disabled={isDisabled}
                           className={`relative p-3 rounded-xl border-2 transition text-center ${
                             selectedSize === s
                               ? isTooSmall
                                 ? "border-rose-500 bg-rose-500/10"
                                 : "border-primary-500 bg-primary-500/10"
-                              : isTooSmall
+                              : isTooSmall || isDisabled
                               ? "border-industrial-700 bg-industrial-800/30 opacity-50"
                               : "border-industrial-700 bg-industrial-800/50 hover:border-industrial-600"
-                          } ${pool && pool.available <= 0 ? "cursor-not-allowed" : ""}`}
+                          } ${isDisabled ? "cursor-not-allowed" : ""}`}
                         >
                           {isRecommended && (
                             <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
@@ -351,7 +517,9 @@ export default function Delivery() {
                           )}
                           <p className="text-sm font-bold text-white">{SIZE_LABEL[s]}</p>
                           <p className="text-[10px] text-industrial-400 mt-0.5">{SIZE_DESC[s]}</p>
-                          <p className="text-[11px] text-primary-400 mt-1">余{pool?.available ?? 0}</p>
+                          <p className="text-[11px] text-primary-400 mt-1">
+                            {isDisabled ? "已停用" : `余${pool?.available ?? 0}`}
+                          </p>
                         </button>
                       );
                     })}
@@ -447,11 +615,232 @@ export default function Delivery() {
                 )}
 
                 <button
-                  onClick={handleSubmit}
+                  onClick={handleSingleSubmit}
                   disabled={loading || !!mismatchWarning}
                   className="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold disabled:opacity-60 active:scale-[0.98] transition shadow-lg"
                 >
                   {loading ? "投放中..." : mismatchWarning ? "请调整格口规格" : "确认投放"}
+                </button>
+              </div>
+            ) : batchResult ? (
+              <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {batchStats && batchStats.fail === 0 ? (
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                        <CheckCircle size={20} className="text-emerald-400" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                        <AlertCircle size={20} className="text-amber-400" />
+                      </div>
+                    )}
+                    <div>
+                      <p className="font-bold text-white">
+                        {batchStats?.success === batchStats?.total ? "全部成功" : "部分成功"}
+                      </p>
+                      <p className="text-xs text-industrial-400">
+                        成功 {batchStats?.success} 件 · 失败 {batchStats?.fail} 件
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                  {batchResult.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-xl border ${
+                        item.success
+                          ? "bg-emerald-500/5 border-emerald-500/30"
+                          : "bg-rose-500/5 border-rose-500/30"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {item.success ? (
+                            <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+                          ) : (
+                            <X size={16} className="text-rose-400 shrink-0" />
+                          )}
+                          <span className="text-sm font-mono text-white font-medium">{item.trackingNo}</span>
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                          item.success ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
+                        }`}>
+                          {item.success ? "成功" : "失败"}
+                        </span>
+                      </div>
+                      {item.success && item.record && (
+                        <div className="mt-2 pt-2 border-t border-emerald-500/20 text-xs text-industrial-300 space-y-1">
+                          <div className="flex justify-between">
+                            <span>格口</span>
+                            <span>{SIZE_LABEL[item.record.lockerSize]} {item.record.lockerNo}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>取件码</span>
+                            <span className="text-emerald-400 font-mono">{item.record.pickupCode}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>费用</span>
+                            <span className="text-amber-400">{formatMoney(item.record.totalFee)}</span>
+                          </div>
+                        </div>
+                      )}
+                      {!item.success && item.message && (
+                        <p className="mt-2 text-[11px] text-rose-300">{item.message}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="w-full py-3.5 rounded-xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition"
+                >
+                  完成
+                </button>
+              </div>
+            ) : (
+              <div className="p-5 space-y-4">
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                  {batchItems.map((item, idx) => {
+                    const recSize = getBatchItemRecommended(item);
+                    const pool = stats?.lockerPools.find((p) => p.size === recSize);
+                    const isDisabled = pool?.status === "disabled";
+                    const isExpanded = expandedBatchIndex === idx;
+                    return (
+                      <div key={item.id} className="p-3.5 rounded-xl bg-industrial-800/60 border border-industrial-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-md bg-primary-600/30 flex items-center justify-center text-xs font-bold text-primary-400">
+                              {idx + 1}
+                            </span>
+                            <span className="text-sm font-medium text-white">
+                              {item.trackingNo || `第 ${idx + 1} 件`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">
+                              推荐 {SIZE_LABEL[recSize]}
+                            </span>
+                            <button
+                              onClick={() => setExpandedBatchIndex(isExpanded ? null : idx)}
+                              className="p-1 rounded hover:bg-industrial-700 text-industrial-400"
+                            >
+                              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            </button>
+                            {batchItems.length > 1 && (
+                              <button
+                                onClick={() => removeBatchItem(item.id)}
+                                className="p-1 rounded hover:bg-rose-500/20 text-industrial-400 hover:text-rose-400"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="space-y-3 pt-2 border-t border-industrial-700">
+                            <div>
+                              <label className="text-[10px] text-industrial-500 mb-1 block">快递单号</label>
+                              <input
+                                type="text"
+                                value={item.trackingNo}
+                                onChange={(e) => updateBatchItem(item.id, "trackingNo", e.target.value.toUpperCase())}
+                                placeholder="请输入单号"
+                                className="w-full px-3 py-2 rounded-lg bg-industrial-900/60 border border-industrial-700 text-white text-sm focus:border-primary-500 focus:outline-none transition"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-industrial-500 mb-1 block">收件人手机号</label>
+                              <input
+                                type="tel"
+                                value={item.recipientPhone}
+                                onChange={(e) => updateBatchItem(item.id, "recipientPhone", e.target.value.replace(/\D/g, "").slice(0, 11))}
+                                placeholder="11位手机号"
+                                className="w-full px-3 py-2 rounded-lg bg-industrial-900/60 border border-industrial-700 text-white text-sm focus:border-primary-500 focus:outline-none transition"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-industrial-500 mb-1 block">尺寸 (长×宽×高 cm)</label>
+                              <div className="grid grid-cols-3 gap-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.length || ""}
+                                  onChange={(e) => updateBatchItem(item.id, "length", Number(e.target.value))}
+                                  placeholder="长"
+                                  className="w-full px-2 py-2 rounded-lg bg-industrial-900/60 border border-industrial-700 text-white text-sm text-center focus:border-primary-500 focus:outline-none"
+                                />
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.width || ""}
+                                  onChange={(e) => updateBatchItem(item.id, "width", Number(e.target.value))}
+                                  placeholder="宽"
+                                  className="w-full px-2 py-2 rounded-lg bg-industrial-900/60 border border-industrial-700 text-white text-sm text-center focus:border-primary-500 focus:outline-none"
+                                />
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.height || ""}
+                                  onChange={(e) => updateBatchItem(item.id, "height", Number(e.target.value))}
+                                  placeholder="高"
+                                  className="w-full px-2 py-2 rounded-lg bg-industrial-900/60 border border-industrial-700 text-white text-sm text-center focus:border-primary-500 focus:outline-none"
+                                />
+                              </div>
+                              {isDisabled && (
+                                <p className="text-[10px] text-rose-400 mt-1">该规格已停用，可能投放失败</p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-industrial-500 mb-1 block">预计天数</label>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => updateBatchItem(item.id, "expectedDays", Math.max(1, Number(item.expectedDays) - 1))}
+                                  className="w-8 h-8 rounded-md bg-industrial-900/60 border border-industrial-700 text-white text-sm"
+                                >
+                                  -
+                                </button>
+                                <div className="flex-1 text-center text-sm text-white font-medium">{item.expectedDays}天</div>
+                                <button
+                                  onClick={() => updateBatchItem(item.id, "expectedDays", Math.min(30, Number(item.expectedDays) + 1))}
+                                  className="w-8 h-8 rounded-md bg-industrial-900/60 border border-industrial-700 text-white text-sm"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={addBatchItem}
+                  className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-industrial-800 border border-dashed border-industrial-600 text-industrial-300 hover:text-white hover:border-primary-500 transition text-sm"
+                >
+                  <Plus size={16} />
+                  添加一件
+                </button>
+
+                {batchError && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30">
+                    <AlertCircle size={16} className="text-rose-400 shrink-0" />
+                    <p className="text-sm text-rose-300">{batchError}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleBatchSubmit}
+                  disabled={batchLoading || batchItems.length === 0}
+                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-semibold disabled:opacity-60 active:scale-[0.98] transition shadow-lg"
+                >
+                  {batchLoading ? "提交中..." : `批量提交 (${batchItems.length}件)`}
                 </button>
               </div>
             )}

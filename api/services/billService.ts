@@ -60,12 +60,10 @@ export function generateBills(): Bill[] {
 }
 
 export function getBills(): Bill[] {
-  if (dataStore.bills.size === 0) {
-    return generateBills();
-  }
-  return Array.from(dataStore.bills.values()).sort((a, b) => b.period.localeCompare(a.period));
+  return generateBills();
 }
 
 export function getBillById(id: string): Bill | undefined {
+  generateBills();
   return dataStore.bills.get(id);
 }

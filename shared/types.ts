@@ -1,5 +1,44 @@
 export type LockerSize = 'S' | 'M' | 'L';
 
+export type PackageSize = 'small' | 'medium' | 'large';
+
+export interface PackageDimensions {
+  length: number;
+  width: number;
+  height: number;
+}
+
+export const PACKAGE_SIZE_MAP: Record<PackageSize, LockerSize> = {
+  small: 'S',
+  medium: 'M',
+  large: 'L',
+};
+
+export const PACKAGE_SIZE_LABEL: Record<PackageSize, string> = {
+  small: '小件',
+  medium: '中件',
+  large: '大件',
+};
+
+export const PACKAGE_SIZE_DESC: Record<PackageSize, string> = {
+  small: '文件/小盒 ≤20cm',
+  medium: '常规快递 ≤40cm',
+  large: '大件包裹 ≤60cm',
+};
+
+export function recommendLockerSize(dim: PackageDimensions): LockerSize {
+  const maxDim = Math.max(dim.length, dim.width, dim.height);
+  if (maxDim <= 20) return 'S';
+  if (maxDim <= 40) return 'M';
+  return 'L';
+}
+
+export function isSizeMismatch(packageSize: PackageSize, lockerSize: LockerSize): boolean {
+  const recommended = PACKAGE_SIZE_MAP[packageSize];
+  const sizeOrder: Record<LockerSize, number> = { S: 0, M: 1, L: 2 };
+  return sizeOrder[lockerSize] < sizeOrder[recommended];
+}
+
 export interface LockerPool {
   size: LockerSize;
   name: string;
@@ -75,6 +114,7 @@ export interface CreateDeliveryRequest {
   courierId: string;
   courierName: string;
   lockerSize: LockerSize;
+  packageSize?: PackageSize;
   recipientPhone: string;
   expectedDays: number;
   version: Record<LockerSize, number>;

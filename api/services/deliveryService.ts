@@ -4,6 +4,7 @@ import type {
   CreateDeliveryRequest,
   LockerPool,
 } from "../../shared/types";
+import { isSizeMismatch, PACKAGE_SIZE_MAP } from "../../shared/types";
 import {
   dataStore,
   acquireLock,
@@ -36,6 +37,14 @@ export function createDelivery(req: CreateDeliveryRequest): CreateDeliveryResult
 
   if (!pool) {
     return { success: false, message: "无效的格口类型" };
+  }
+
+  if (req.packageSize && isSizeMismatch(req.packageSize, size)) {
+    const recommended = PACKAGE_SIZE_MAP[req.packageSize];
+    return {
+      success: false,
+      message: `包裹尺寸为${req.packageSize === "small" ? "小件" : req.packageSize === "medium" ? "中件" : "大件"}，推荐使用${recommended === "S" ? "小号" : recommended === "M" ? "中号" : "大号"}及以上格口，当前选择${size === "S" ? "小号" : size === "M" ? "中号" : "大号"}格口过小`,
+    };
   }
 
   const expectedVersion = req.version[size];

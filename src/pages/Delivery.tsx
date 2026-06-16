@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import type { LockerSize, DeliveryRecord, CalculateFeeResponse } from "../../shared/types";
+import { useEffect, useState, useMemo } from "react";
+import type { LockerSize, DeliveryRecord, CalculateFeeResponse, PackageSize } from "../../shared/types";
+import { PACKAGE_SIZE_MAP, PACKAGE_SIZE_LABEL, PACKAGE_SIZE_DESC, isSizeMismatch } from "../../shared/types";
 import { useAppStore } from "@/store/appStore";
 import { api, SIZE_LABEL, SIZE_DESC, formatDateTime, formatMoney, maskPhone } from "@/utils/api";
 import PageHeader from "@/components/PageHeader";
 import LockerPoolCard from "@/components/LockerPoolCard";
-import { Plus, X, Package, Phone, Calendar, CheckCircle, Clock, AlertCircle, Copy, Key } from "lucide-react";
+import { Plus, X, Package, Phone, Calendar, CheckCircle, Clock, AlertCircle, Copy, Key, Sparkles, Ruler } from "lucide-react";
 
 export default function Delivery() {
   const stats = useAppStore((s) => s.stats);
@@ -13,8 +14,11 @@ export default function Delivery() {
   const courier = useAppStore((s) => s.courier);
   const fetchStats = useAppStore((s) => s.fetchStats);
   const fetchDeliveries = useAppStore((s) => s.fetchDeliveries);
+  const startPolling = useAppStore((s) => s.startPolling);
+  const stopPolling = useAppStore((s) => s.stopPolling);
 
   const [showModal, setShowModal] = useState(false);
+  const [packageSize, setPackageSize] = useState<PackageSize>("medium");
   const [selectedSize, setSelectedSize] = useState<LockerSize>("M");
   const [trackingNo, setTrackingNo] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
@@ -25,10 +29,18 @@ export default function Delivery() {
   const [successRecord, setSuccessRecord] = useState<DeliveryRecord | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const recommendedSize = useMemo(() => PACKAGE_SIZE_MAP[packageSize], [packageSize]);
+  const mismatchWarning = useMemo(() => {
+    if (!packageSize) return null;
+    return isSizeMismatch(packageSize, selectedSize) ? "包裹尺寸偏大，当前格口可能放不下，建议选择推荐规格" : null;
+  }, [packageSize, selectedSize]);
+
   useEffect(() => {
     fetchStats();
     fetchDeliveries();
-  }, [fetchStats, fetchDeliveries]);
+    startPolling();
+    return () => stopPolling();
+  }, [fetchStats, fetchDeliveries, startPolling, stopPolling]);
 
   useEffect(() => {
     if (showModal) {
@@ -36,8 +48,27 @@ export default function Delivery() {
     }
   }, [showModal, selectedSize, expectedDays]);
 
+  useEffect(() => {
+    if (packageSize) {
+      setSelectedSize(recommendedSize);
+    }
+  }, [packageSize, recommendedSize]);
+
   const openModal = () => {
+    setPackageSize("medium");
     setSelectedSize("M");
+    setTrackingNo("");
+    setRecipientPhone("");
+    setExpectedDays(1);
+    setError("");
+    setSuccessRecord(null);
+    setShowModal(true);
+  };
+
+  const openModalWithSize = (size: LockerSize) => {
+    const pkgMap: Record<LockerSize, PackageSize> = { S: "small", M: "medium", L: "large" };
+    setPackageSize(pkgMap[size]);
+    setSelectedSize(size);
     setTrackingNo("");
     setRecipientPhone("");
     setExpectedDays(1);
@@ -49,6 +80,7 @@ export default function Delivery() {
   const handleSubmit = async () => {
     if (!trackingNo.trim()) return setError("请输入快递单号");
     if (!/^1\d{10}$/.test(recipientPhone)) return setError("请输入正确的手机号");
+    if (isSizeMismatch(packageSize, selectedSize)) return setError("格口规格与包裹尺寸不匹配，请选择推荐规格或更大的格口");
 
     setLoading(true);
     setError("");
@@ -69,6 +101,7 @@ export default function Delivery() {
           courierId: courier.id,
           courierName: courier.name,
           lockerSize: selectedSize,
+          packageSize,
           recipientPhone,
           expectedDays,
           version: currentVersions,
@@ -88,6 +121,7 @@ export default function Delivery() {
             setError(res.message || "投放失败，请重试");
             break;
           }
+          await fetchStats();
           await new Promise((r) => setTimeout(r, 300));
           continue;
         }
@@ -101,6 +135,7 @@ export default function Delivery() {
             setError(e.message || "并发冲突，请重试");
             break;
           }
+          await fetchStats();
           await new Promise((r) => setTimeout(r, 300));
           continue;
         }
@@ -140,10 +175,7 @@ export default function Delivery() {
             {stats?.lockerPools.map((pool) => (
               <button
                 key={pool.size}
-                onClick={() => {
-                  setSelectedSize(pool.size);
-                  openModal();
-                }}
+                onClick={() => openModalWithSize(pool.size)}
                 className="w-full text-left"
               >
                 <LockerPoolCard pool={pool} />
@@ -155,6 +187,10 @@ export default function Delivery() {
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-white">在途快递 ({inTransitList.length})</h2>
+            <span className="text-[11px] text-industrial-400 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              自动刷新
+            </span>
           </div>
           {inTransitList.length === 0 ? (
             <div className="p-8 text-center rounded-xl bg-industrial-800/50 border border-industrial-700">
@@ -213,7 +249,7 @@ export default function Delivery() {
             className="w-full max-w-[480px] bg-industrial-900 rounded-t-2xl max-h-[90vh] overflow-y-auto scrollbar-hide"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 flex items-center justify-between px-5 py-4 bg-industrial-900 border-b border-industrial-800">
+            <div className="sticky top-0 flex items-center justify-between px-5 py-4 bg-industrial-900 border-b border-industrial-800 z-10">
               <h3 className="font-bold text-white">{successRecord ? "投放成功" : "新增投放"}</h3>
               <button onClick={() => setShowModal(false)} className="p-1.5 rounded-lg hover:bg-industrial-800 text-industrial-400">
                 <X size={20} />
@@ -260,21 +296,59 @@ export default function Delivery() {
             ) : (
               <div className="p-5 space-y-4">
                 <div>
-                  <label className="text-xs text-industrial-400 mb-2 block">格口规格</label>
+                  <label className="text-xs text-industrial-400 mb-2 block">包裹大小</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["small", "medium", "large"] as PackageSize[]).map((ps) => (
+                      <button
+                        key={ps}
+                        onClick={() => setPackageSize(ps)}
+                        className={`p-3 rounded-xl border-2 transition text-center ${
+                          packageSize === ps
+                            ? "border-amber-500 bg-amber-500/10"
+                            : "border-industrial-700 bg-industrial-800/50 hover:border-industrial-600"
+                        }`}
+                      >
+                        <Ruler size={16} className={`mx-auto mb-1 ${packageSize === ps ? "text-amber-400" : "text-industrial-500"}`} />
+                        <p className="text-sm font-bold text-white">{PACKAGE_SIZE_LABEL[ps]}</p>
+                        <p className="text-[10px] text-industrial-400 mt-0.5">{PACKAGE_SIZE_DESC[ps]}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-industrial-400">格口规格</label>
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                      <Sparkles size={12} className="text-emerald-400" />
+                      <span className="text-[11px] text-emerald-400">推荐 {SIZE_LABEL[recommendedSize]}</span>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     {(["S", "M", "L"] as LockerSize[]).map((s) => {
                       const pool = stats?.lockerPools.find((p) => p.size === s);
+                      const isRecommended = s === recommendedSize;
+                      const isTooSmall = isSizeMismatch(packageSize, s);
                       return (
                         <button
                           key={s}
                           onClick={() => setSelectedSize(s)}
                           disabled={pool && pool.available <= 0}
-                          className={`p-3 rounded-xl border-2 transition text-center ${
+                          className={`relative p-3 rounded-xl border-2 transition text-center ${
                             selectedSize === s
-                              ? "border-primary-500 bg-primary-500/10"
+                              ? isTooSmall
+                                ? "border-rose-500 bg-rose-500/10"
+                                : "border-primary-500 bg-primary-500/10"
+                              : isTooSmall
+                              ? "border-industrial-700 bg-industrial-800/30 opacity-50"
                               : "border-industrial-700 bg-industrial-800/50 hover:border-industrial-600"
-                          } ${pool && pool.available <= 0 ? "opacity-40 cursor-not-allowed" : ""}`}
+                          } ${pool && pool.available <= 0 ? "cursor-not-allowed" : ""}`}
                         >
+                          {isRecommended && (
+                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                              <Sparkles size={10} className="text-white" />
+                            </span>
+                          )}
                           <p className="text-sm font-bold text-white">{SIZE_LABEL[s]}</p>
                           <p className="text-[10px] text-industrial-400 mt-0.5">{SIZE_DESC[s]}</p>
                           <p className="text-[11px] text-primary-400 mt-1">余{pool?.available ?? 0}</p>
@@ -282,6 +356,12 @@ export default function Delivery() {
                       );
                     })}
                   </div>
+                  {mismatchWarning && (
+                    <div className="flex items-center gap-2 mt-2 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30">
+                      <AlertCircle size={14} className="text-rose-400 shrink-0" />
+                      <p className="text-[11px] text-rose-300">{mismatchWarning}</p>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -343,7 +423,7 @@ export default function Delivery() {
 
                 {feePreview && (
                   <div className="p-4 rounded-xl bg-industrial-800/60 border border-industrial-700">
-                    <p className="text-xs text-industrial-400 mb-2">费用预览</p>
+                    <p className="text-xs text-industrial-400 mb-2">费用预览 · {SIZE_LABEL[selectedSize]}</p>
                     <div className="space-y-1.5 mb-2">
                       {feePreview.tierDetails.map((t) => (
                         <div key={t.tierId} className="flex justify-between text-xs">
@@ -368,10 +448,10 @@ export default function Delivery() {
 
                 <button
                   onClick={handleSubmit}
-                  disabled={loading}
+                  disabled={loading || !!mismatchWarning}
                   className="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold disabled:opacity-60 active:scale-[0.98] transition shadow-lg"
                 >
-                  {loading ? "投放中..." : "确认投放"}
+                  {loading ? "投放中..." : mismatchWarning ? "请调整格口规格" : "确认投放"}
                 </button>
               </div>
             )}

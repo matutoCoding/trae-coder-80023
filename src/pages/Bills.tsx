@@ -3,7 +3,7 @@ import type { Bill, BillDetail, DeliveryRecord } from "../../shared/types";
 import { useAppStore } from "@/store/appStore";
 import { api, SIZE_LABEL, formatDateTime, formatMoney, maskPhone } from "@/utils/api";
 import PageHeader from "@/components/PageHeader";
-import { Receipt, ChevronRight, Package, User, Clock, CheckCircle, Filter, Calendar, CreditCard, ChevronDown, ChevronUp, AlertCircle, X, Download } from "lucide-react";
+import { Receipt, ChevronRight, Package, User, Clock, CheckCircle, Filter, Calendar, CreditCard, ChevronDown, ChevronUp, AlertCircle, X, Download, FileText, Check } from "lucide-react";
 
 type BillStatusFilter = "all" | "settled" | "unsettled";
 
@@ -21,6 +21,7 @@ export default function Bills() {
   const [settling, setSettling] = useState(false);
   const [couriers, setCouriers] = useState<{ id: string; name: string }[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [showExportPreview, setShowExportPreview] = useState<null | "list" | "detail">(null);
 
   const availableMonths = useMemo(() => {
     const months = new Set(bills.map((b) => b.period));
@@ -43,8 +44,48 @@ export default function Bills() {
     const unsettled = total - settled;
     const totalAmount = filteredBills.reduce((s, b) => s + b.totalFee, 0);
     const unsettledAmount = filteredBills.filter((b) => !b.settled).reduce((s, b) => s + b.totalFee, 0);
-    return { total, settled, unsettled, totalAmount, unsettledAmount };
+    const totalDetailRows = filteredBills.reduce((s, b) => s + b.totalDeliveries, 0);
+    return { total, settled, unsettled, totalAmount, unsettledAmount, totalDetailRows };
   }, [filteredBills]);
+
+  const exportPreview = useMemo(() => {
+    if (showExportPreview === "list") {
+      return {
+        title: "对账单导出预览",
+        totalAmount: summary.totalAmount,
+        totalRecords: summary.total,
+        totalDetailRows: summary.totalDetailRows,
+        filters: [
+          monthFilter !== "all" && `月份: ${monthFilter}`,
+          courierFilter !== "all" && `快递员: ${couriers.find((c) => c.id === courierFilter)?.name || courierFilter}`,
+          statusFilter !== "all" && `状态: ${statusFilter === "settled" ? "已结算" : "待结算"}`,
+        ].filter(Boolean) as string[],
+        onConfirm: () => {
+          const url = api.getBillsExportUrl({
+            period: monthFilter === "all" ? undefined : monthFilter,
+            courierId: courierFilter === "all" ? undefined : courierFilter,
+            status: statusFilter === "all" ? undefined : statusFilter,
+          });
+          window.open(url, "_blank");
+          setShowExportPreview(null);
+        },
+      };
+    }
+    if (showExportPreview === "detail" && billDetail) {
+      return {
+        title: "账单详情导出预览",
+        totalAmount: billDetail.totalFee,
+        totalRecords: billDetail.totalDeliveries,
+        totalDetailRows: billDetail.details.length,
+        filters: [`快递员: ${billDetail.courierName}`, `月份: ${billDetail.period}`],
+        onConfirm: () => {
+          window.open(api.getBillExportUrl(billDetail.id), "_blank");
+          setShowExportPreview(null);
+        },
+      };
+    }
+    return null;
+  }, [showExportPreview, summary, billDetail, monthFilter, courierFilter, statusFilter, couriers]);
 
   useEffect(() => {
     fetchBills();
@@ -115,14 +156,7 @@ export default function Bills() {
                   <span className="text-sm font-semibold text-white">费用汇总</span>
                 </div>
                 <button
-                  onClick={() => {
-                    const url = api.getBillsExportUrl({
-                      period: monthFilter === "all" ? undefined : monthFilter,
-                      courierId: courierFilter === "all" ? undefined : courierFilter,
-                      status: statusFilter === "all" ? undefined : statusFilter,
-                    });
-                    window.open(url, "_blank");
-                  }}
+                  onClick={() => setShowExportPreview("list")}
                   disabled={filteredBills.length === 0}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-600/20 border border-primary-500/30 text-primary-300 text-[11px] font-medium hover:bg-primary-600/30 disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
@@ -309,7 +343,7 @@ export default function Bills() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => window.open(api.getBillExportUrl(billDetail.id), "_blank")}
+                    onClick={() => setShowExportPreview("detail")}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/10 border border-white/20 text-white text-[11px] font-medium hover:bg-white/20 transition"
                   >
                     <Download size={12} />
@@ -423,6 +457,80 @@ export default function Bills() {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {exportPreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/70 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-2xl bg-industrial-900 border border-industrial-700 shadow-2xl animate-in fade-in zoom-in duration-200">
+              <div className="flex items-center justify-between p-4 border-b border-industrial-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-primary-900/50 text-primary-400 flex items-center justify-center">
+                    <FileText size={16} />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white">{exportPreview.title}</h3>
+                </div>
+                <button
+                  onClick={() => setShowExportPreview(null)}
+                  className="w-7 h-7 rounded-lg bg-industrial-800 text-industrial-400 flex items-center justify-center hover:text-white transition"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3">
+                {exportPreview.filters.length > 0 && (
+                  <div className="p-3 rounded-xl bg-industrial-800/50 border border-industrial-700">
+                    <p className="text-[10px] text-industrial-400 mb-1.5">当前筛选</p>
+                    <div className="flex flex-wrap gap-1">
+                      {exportPreview.filters.map((f, i) => (
+                        <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-primary-900/30 text-primary-300">
+                          {f}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-3 rounded-xl bg-blue-900/20 border border-blue-500/20 text-center">
+                    <p className="text-[10px] text-blue-400 mb-0.5">账单数</p>
+                    <p className="text-base font-bold text-white">{exportPreview.totalRecords}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-900/20 border border-emerald-500/20 text-center">
+                    <p className="text-[10px] text-emerald-400 mb-0.5">明细行</p>
+                    <p className="text-base font-bold text-white">{exportPreview.totalDetailRows}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-amber-900/20 border border-amber-500/20 text-center">
+                    <p className="text-[10px] text-amber-400 mb-0.5">总金额</p>
+                    <p className="text-base font-bold text-white">{formatMoney(exportPreview.totalAmount)}</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-industrial-800/50 border border-industrial-700">
+                  <div className="flex items-center gap-2 text-[11px] text-industrial-300">
+                    <Check size={12} className="text-emerald-400 flex-shrink-0" />
+                    <span>导出文件包含汇总行，金额与页面显示一致</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 p-4 border-t border-industrial-800">
+                <button
+                  onClick={() => setShowExportPreview(null)}
+                  className="flex-1 py-2 text-sm font-medium rounded-lg bg-industrial-800 text-industrial-300 hover:bg-industrial-700 transition"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={exportPreview.onConfirm}
+                  className="flex-1 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-500 transition flex items-center justify-center gap-1.5"
+                >
+                  <Download size={14} />
+                  确认导出
+                </button>
+              </div>
             </div>
           </div>
         )}

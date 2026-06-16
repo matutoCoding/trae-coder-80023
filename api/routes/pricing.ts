@@ -8,7 +8,7 @@ router.get("/", (_req, res) => {
   res.json(getAllTiers());
 });
 
-router.put("/", (req, res) => {
+router.post("/", (req, res) => {
   const { tiers } = req.body;
   if (!Array.isArray(tiers)) {
     return res.status(400).json({ success: false, message: "参数错误" });

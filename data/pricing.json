@@ -1,0 +1,65 @@
+[
+  {
+    "id": "t1",
+    "size": "S",
+    "startDay": 1,
+    "endDay": 2,
+    "pricePerDay": 0.5
+  },
+  {
+    "id": "t2",
+    "size": "S",
+    "startDay": 3,
+    "endDay": 5,
+    "pricePerDay": 1
+  },
+  {
+    "id": "t3",
+    "size": "S",
+    "startDay": 6,
+    "endDay": -1,
+    "pricePerDay": 2
+  },
+  {
+    "id": "t4",
+    "size": "M",
+    "startDay": 1,
+    "endDay": 2,
+    "pricePerDay": 1.2
+  },
+  {
+    "id": "t5",
+    "size": "M",
+    "startDay": 3,
+    "endDay": 5,
+    "pricePerDay": 1.616
+  },
+  {
+    "id": "t6",
+    "size": "M",
+    "startDay": 6,
+    "endDay": -1,
+    "pricePerDay": 3
+  },
+  {
+    "id": "t7",
+    "size": "L",
+    "startDay": 1,
+    "endDay": 2,
+    "pricePerDay": 1.5
+  },
+  {
+    "id": "t8",
+    "size": "L",
+    "startDay": 3,
+    "endDay": 5,
+    "pricePerDay": 2.5
+  },
+  {
+    "id": "t9",
+    "size": "L",
+    "startDay": 6,
+    "endDay": -1,
+    "pricePerDay": 5
+  }
+]

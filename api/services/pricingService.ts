@@ -1,5 +1,5 @@
 import type { LockerSize, TierDetail } from "../../shared/types";
-import { dataStore } from "../store/dataStore";
+import { dataStore, savePricingTiers } from "../store/dataStore";
 
 export function getTierLabel(startDay: number, endDay: number): string {
   if (endDay === -1) return `第${startDay}天+`;
@@ -76,6 +76,8 @@ export function updateTiers(tiers: { id?: string; size: LockerSize; startDay: nu
       dataStore.pricingTiers.delete(oldId);
     }
   }
+
+  savePricingTiers(dataStore.pricingTiers);
 
   return getAllTiers();
 }

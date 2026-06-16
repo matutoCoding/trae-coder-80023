@@ -15,6 +15,7 @@ import type {
   CalculateFeeResponse,
   TimeRange,
   OpsDashboardData,
+  OpsTrendData,
   TierDetail,
 } from "../../shared/types";
 
@@ -240,6 +241,14 @@ export const api = {
     if (filter?.courierId) qs.set("courierId", filter.courierId);
     if (filter?.size) qs.set("size", filter.size);
     const res = await fetch(`${API_BASE}/api/ops/dashboard?${qs.toString()}`);
+    return handleResponse(res);
+  },
+
+  async getOpsTrend(days: number, filter?: { courierId?: string; size?: LockerSize }): Promise<OpsTrendData> {
+    const qs = new URLSearchParams({ days: String(days) });
+    if (filter?.courierId) qs.set("courierId", filter.courierId);
+    if (filter?.size) qs.set("size", filter.size);
+    const res = await fetch(`${API_BASE}/api/ops/trend?${qs.toString()}`);
     return handleResponse(res);
   },
 

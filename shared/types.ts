@@ -175,6 +175,8 @@ export interface BatchDeliveryResultItem {
   message?: string;
   record?: DeliveryRecord;
   recommendedLocker?: LockerSize;
+  upgraded?: boolean;
+  baseLocker?: LockerSize;
 }
 
 export interface BatchDeliveryResponse {
@@ -233,6 +235,21 @@ export interface OpsDashboardData {
   byLockerSize: OpsBreakdownItem[];
   lockerTension: { size: LockerSize; label: string; total: number; available: number; rate: number; status: LockerStatus }[];
   records: DeliveryRecord[];
+}
+
+export interface OpsTrendDay {
+  date: string;
+  dateTs: number;
+  deliveryCount: number;
+  pickedUpCount: number;
+  overdueFee: number;
+}
+
+export interface OpsTrendData {
+  days: number;
+  items: OpsTrendDay[];
+  maxDelivery: number;
+  maxFee: number;
 }
 
 export interface FeePreviewResponse {

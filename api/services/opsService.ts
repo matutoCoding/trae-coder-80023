@@ -4,6 +4,8 @@ import type {
   OpsBreakdownItem,
   LockerSize,
   DeliveryRecord,
+  OpsTrendData,
+  OpsTrendDay,
 } from "../../shared/types";
 import { SIZE_LABEL } from "../../shared/constants";
 import { dataStore } from "../store/dataStore";
@@ -70,6 +72,76 @@ function buildBreakdown(
     });
   }
   return items.sort((a, b) => b.deliveryCount - a.deliveryCount);
+}
+
+function startOfDay(ts: number): number {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+export function getOpsTrend(days: number, filter?: { courierId?: string; size?: LockerSize }): OpsTrendData {
+  const now = Date.now();
+  const startTs = startOfDay(now - (days - 1) * 24 * 60 * 60 * 1000);
+  const endTs = startOfDay(now) + 24 * 60 * 60 * 1000;
+
+  const dayItems: OpsTrendDay[] = [];
+  for (let i = 0; i < days; i++) {
+    const ts = startTs + i * 24 * 60 * 60 * 1000;
+    dayItems.push({
+      date: formatDate(ts),
+      dateTs: ts,
+      deliveryCount: 0,
+      pickedUpCount: 0,
+      overdueFee: 0,
+    });
+  }
+
+  let allRecords = Array.from(dataStore.deliveryRecords.values()).filter(
+    (r) => r.deliveryTime >= startTs && r.deliveryTime < endTs
+  );
+  if (filter?.courierId) {
+    allRecords = allRecords.filter((r) => r.courierId === filter.courierId);
+  }
+  if (filter?.size) {
+    allRecords = allRecords.filter((r) => r.lockerSize === filter.size);
+  }
+
+  for (const r of allRecords) {
+    const dayIdx = Math.floor((startOfDay(r.deliveryTime) - startTs) / (24 * 60 * 60 * 1000));
+    if (dayIdx >= 0 && dayIdx < dayItems.length) {
+      dayItems[dayIdx].deliveryCount++;
+      if (r.status === "picked_up") {
+        dayItems[dayIdx].pickedUpCount++;
+      }
+      if (r.status === "in_transit") {
+        const fee = calculateFee(r.lockerSize, calculateDaysFromTime(r.deliveryTime));
+        dayItems[dayIdx].overdueFee += fee.totalFee;
+      } else if (r.pickupTime) {
+        const fee = calculateFee(r.lockerSize, calculateDaysFromTime(r.deliveryTime, r.pickupTime));
+        dayItems[dayIdx].overdueFee += fee.totalFee;
+      }
+    }
+  }
+
+  for (const item of dayItems) {
+    item.overdueFee = Number(item.overdueFee.toFixed(2));
+  }
+
+  const maxDelivery = Math.max(1, ...dayItems.map((d) => d.deliveryCount));
+  const maxFee = Math.max(1, ...dayItems.map((d) => d.overdueFee));
+
+  return {
+    days,
+    items: dayItems,
+    maxDelivery,
+    maxFee,
+  };
 }
 
 export function getOpsDashboard(range: TimeRange, filter?: { courierId?: string; size?: LockerSize }): OpsDashboardData {

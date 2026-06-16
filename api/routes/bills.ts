@@ -116,7 +116,34 @@ router.get("/export", (req, res) => {
     "结算时间",
   ];
 
-  const csv = "\ufeff" + buildCSV(headers, rows);
+  const totalBills = bills.length;
+  const totalDeliveries = bills.reduce((s, b) => s + b.totalDeliveries, 0);
+  const totalPickedUp = bills.reduce((s, b) => s + b.pickedUpCount, 0);
+  const totalFee = bills.reduce((s, b) => s + b.totalFee, 0);
+  const summaryRow: (string | number)[] = [
+    "汇总",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    `共${totalBills}个账单`,
+    `投放${totalDeliveries}件`,
+    `已取${totalPickedUp}件`,
+    totalFee,
+    "",
+    "",
+    "",
+    "",
+  ];
+
+  const csv = "\ufeff" + buildCSV(headers, [...rows, summaryRow]);
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="bills_${Date.now()}.csv"`);
   res.send(csv);

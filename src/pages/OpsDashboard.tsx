@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { LockerSize, OpsBreakdownItem, OpsDashboardData, TimeRange, DeliveryRecord } from "../../shared/types";
+import type {
+  LockerSize,
+  OpsBreakdownItem,
+  OpsDashboardData,
+  TimeRange,
+  DeliveryRecord,
+  OpsTrendData,
+  OpsTrendDay,
+} from "../../shared/types";
 import { recommendAvailableLockerSize } from "../../shared/types";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
@@ -16,7 +24,7 @@ import {
   Users,
   Boxes,
   AlertTriangle,
-  Download,
+  LineChart,
 } from "lucide-react";
 import { api, SIZE_LABEL, formatDateTime, formatMoney, maskPhone } from "@/utils/api";
 
@@ -26,13 +34,21 @@ const RANGE_LABEL: Record<TimeRange, string> = {
   month: "本月",
 };
 
+const TREND_LABEL: Record<number, string> = {
+  7: "近7天",
+  30: "近30天",
+};
+
 export default function OpsDashboard() {
   const navigate = useNavigate();
   const [range, setRange] = useState<TimeRange>("today");
+  const [trendDays, setTrendDays] = useState<number>(7);
   const [data, setData] = useState<OpsDashboardData | null>(null);
-  const [filter, setFilter] = useState<{ courierId?: string; size?: LockerSize }>({});
-  const [showDetail, setShowDetail] = useState<null | { type: "courier" | "size"; key: string; label: string }>(null);
+  const [trendData, setTrendData] = useState<OpsTrendData | null>(null);
+  const [filter, setFilter] = useState<{ courierId?: string; size?: LockerSize; dateTs?: number }>({});
+  const [showDetail, setShowDetail] = useState<null | { type: "courier" | "size" | "date"; key: string; label: string }>(null);
   const [loading, setLoading] = useState(true);
+  const [trendLoading, setTrendLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
@@ -42,6 +58,14 @@ export default function OpsDashboard() {
       .finally(() => setLoading(false));
   }, [range, filter]);
 
+  useEffect(() => {
+    setTrendLoading(true);
+    api
+      .getOpsTrend(trendDays, filter)
+      .then(setTrendData)
+      .finally(() => setTrendLoading(false));
+  }, [trendDays, filter]);
+
   const filteredRecords = useMemo(() => {
     if (!data) return [];
     let rs = data.records;
@@ -49,6 +73,10 @@ export default function OpsDashboard() {
       rs = rs.filter((r) => r.courierId === showDetail.key);
     } else if (showDetail?.type === "size") {
       rs = rs.filter((r) => r.lockerSize === showDetail.key);
+    } else if (showDetail?.type === "date" && showDetail.key) {
+      const ts = Number(showDetail.key);
+      const nextTs = ts + 24 * 60 * 60 * 1000;
+      rs = rs.filter((r) => r.deliveryTime >= ts && r.deliveryTime < nextTs);
     }
     return rs;
   }, [data, showDetail]);
@@ -141,21 +169,40 @@ export default function OpsDashboard() {
       />
 
       <div className="container mx-auto px-4 py-4 space-y-5">
-        <div className="flex gap-2 bg-industrial-800/50 p-1 rounded-xl">
-          {(Object.keys(RANGE_LABEL) as TimeRange[]).map((r) => (
-            <button
-              key={r}
-              onClick={() => {
-                setRange(r);
-                setFilter({});
-              }}
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                range === r ? "bg-primary-600 text-white shadow" : "text-industrial-300 hover:text-white"
-              }`}
-            >
-              {RANGE_LABEL[r]}
-            </button>
-          ))}
+        <div className="space-y-3">
+          <div className="flex gap-2 bg-industrial-800/50 p-1 rounded-xl">
+            {(Object.keys(RANGE_LABEL) as TimeRange[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => {
+                  setRange(r);
+                  setFilter({});
+                }}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
+                  range === r ? "bg-primary-600 text-white shadow" : "text-industrial-300 hover:text-white"
+                }`}
+              >
+                {RANGE_LABEL[r]}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            {([7, 30] as number[]).map((d) => (
+              <button
+                key={d}
+                onClick={() => setTrendDays(d)}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all border ${
+                  trendDays === d
+                    ? "bg-primary-900/50 border-primary-600 text-primary-300 border-primary-500/50"
+                    : "bg-industrial-800/50 border-industrial-700 text-industrial-300 hover:text-white"
+                }`}
+              >
+                <LineChart size={12} className="inline mr-1" />
+                {TREND_LABEL[d]}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading && (
@@ -191,6 +238,89 @@ export default function OpsDashboard() {
               />
               <StatCard label="平均存放" value={`${data.summary.avgDays}天`} icon={BarChart3} color="purple" />
             </div>
+
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <LineChart size={14} className="text-primary-400" />
+                  {TREND_LABEL[trendDays]} · 趋势分析
+                </h2>
+                <span className="text-xs text-industrial-400">点击日期查看当日明细</span>
+              </div>
+              <div className="p-4 rounded-xl bg-industrial-800/70 border border-industrial-700">
+                {trendLoading ? (
+                  <div className="h-40 rounded-lg bg-industrial-700/50 animate-pulse" />
+                ) : trendData && trendData.items.length > 0 ? (
+                  <>
+                    <div className="flex items-center gap-4 mb-3 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-blue-500/70" />
+                        <span className="text-industrial-300">投放</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-emerald-500/70" />
+                        <span className="text-industrial-300">取件</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-1.5 rounded bg-amber-400" />
+                        <span className="text-industrial-300">滞留费(元)</span>
+                      </div>
+                    </div>
+                    <div className="relative h-40">
+                      <div className="absolute inset-0 flex items-end gap-1">
+                        {trendData.items.map((item, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() =>
+                              setShowDetail({ type: "date", key: String(item.dateTs), label: `${item.date} 明细` })
+                            }
+                            className="flex-1 flex flex-col items-center justify-end h-full group"
+                          >
+                            <div className="w-full flex items-end justify-center gap-0.5 h-28">
+                              <div
+                                className="w-1/2 bg-blue-500/70 rounded-t transition-all group-hover:bg-blue-400"
+                                style={{
+                                  height: `${(item.deliveryCount / trendData.maxDelivery) * 100}%`,
+                                  minHeight: item.deliveryCount > 0 ? "4px" : "0",
+                                }}
+                              />
+                              <div
+                                className="w-1/2 bg-emerald-500/70 rounded-t transition-all group-hover:bg-emerald-400"
+                                style={{
+                                  height: `${(item.pickedUpCount / trendData.maxDelivery) * 100}%`,
+                                  minHeight: item.pickedUpCount > 0 ? "4px" : "0",
+                                }}
+                              />
+                            </div>
+                            <div className="w-full h-6 flex items-center justify-center mt-1">
+                              <div
+                                className="h-1 bg-amber-400 rounded transition-all group-hover:bg-amber-300"
+                                style={{
+                                  width: `${Math.max(20, (item.overdueFee / trendData.maxFee) * 100)}%`,
+                                  opacity: item.overdueFee > 0 ? 1 : 0,
+                                }}
+                              />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 mt-1">
+                      {trendData.items.map((item, idx) => (
+                        <div key={idx} className="flex-1 text-center">
+                          <p className="text-[10px] text-industrial-400">{item.date}</p>
+                          <p className="text-[10px] text-blue-400">投{item.deliveryCount}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-40 flex items-center justify-center text-xs text-industrial-500">
+                    暂无趋势数据
+                  </div>
+                )}
+              </div>
+            </section>
 
             <section>
               <div className="flex items-center justify-between mb-3">

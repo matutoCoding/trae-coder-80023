@@ -8,7 +8,7 @@ import type {
   BatchDeliveryResultItem,
   PackageSize,
 } from "../../shared/types";
-import { isSizeMismatch, PACKAGE_SIZE_MAP, recommendLockerSize, getPackageSize } from "../../shared/types";
+import { isSizeMismatch, PACKAGE_SIZE_MAP, recommendLockerSize, recommendAvailableLockerSize, getPackageSize } from "../../shared/types";
 import {
   dataStore,
   acquireLock,
@@ -170,42 +170,12 @@ export function createBatchDelivery(req: BatchDeliveryRequest): BatchDeliveryRes
   try {
     for (const item of req.items) {
       const dim = { length: item.length, width: item.width, height: item.height };
-      const recommendedSize = recommendLockerSize(dim);
       const packageSize = getPackageSize(dim);
 
-      const pool = dataStore.lockerPools.get(recommendedSize);
-      if (!pool) {
-        failCount++;
-        results.push({
-          trackingNo: item.trackingNo,
-          success: false,
-          message: "无效的格口类型",
-          recommendedLocker: recommendedSize,
-        });
-        continue;
-      }
-
-      if (pool.status === "disabled") {
-        failCount++;
-        results.push({
-          trackingNo: item.trackingNo,
-          success: false,
-          message: `${pool.name}已停用`,
-          recommendedLocker: recommendedSize,
-        });
-        continue;
-      }
-
-      if (pool.available <= 0) {
-        failCount++;
-        results.push({
-          trackingNo: item.trackingNo,
-          success: false,
-          message: "该规格格口已无可用余量",
-          recommendedLocker: recommendedSize,
-        });
-        continue;
-      }
+      const pools = Array.from(dataStore.lockerPools.values());
+      const { size: finalSize, upgraded } = recommendAvailableLockerSize(dim, pools);
+      const pool = dataStore.lockerPools.get(finalSize)!;
+      const baseSize = recommendLockerSize(dim);
 
       if (!/^1\d{10}$/.test(item.recipientPhone)) {
         failCount++;
@@ -213,7 +183,7 @@ export function createBatchDelivery(req: BatchDeliveryRequest): BatchDeliveryRes
           trackingNo: item.trackingNo,
           success: false,
           message: "手机号格式不正确",
-          recommendedLocker: recommendedSize,
+          recommendedLocker: finalSize,
         });
         continue;
       }
@@ -224,13 +194,13 @@ export function createBatchDelivery(req: BatchDeliveryRequest): BatchDeliveryRes
           trackingNo: item.trackingNo,
           success: false,
           message: "快递单号不能为空",
-          recommendedLocker: recommendedSize,
+          recommendedLocker: finalSize,
         });
         continue;
       }
 
       const usedCount = pool.total - pool.available;
-      const lockerNo = generateLockerNo(recommendedSize, usedCount + 1);
+      const lockerNo = generateLockerNo(finalSize, usedCount + 1);
 
       let pickupCode = generatePickupCode();
       let codeAttempts = 0;
@@ -240,14 +210,14 @@ export function createBatchDelivery(req: BatchDeliveryRequest): BatchDeliveryRes
       }
 
       const deliveryTime = Date.now();
-      const { tierDetails, totalFee } = calculateFee(recommendedSize, Math.max(1, item.expectedDays));
+      const { tierDetails, totalFee } = calculateFee(finalSize, Math.max(1, item.expectedDays));
 
       const record: DeliveryRecord = {
         id: generateId("del"),
         trackingNo: item.trackingNo.trim(),
         courierId: req.courierId,
         courierName: req.courierName,
-        lockerSize: recommendedSize,
+        lockerSize: finalSize,
         lockerNo,
         pickupCode,
         recipientPhone: item.recipientPhone,
@@ -259,7 +229,7 @@ export function createBatchDelivery(req: BatchDeliveryRequest): BatchDeliveryRes
         packageSize: packageSize as PackageSize,
       };
 
-      dataStore.lockerPools.set(recommendedSize, {
+      dataStore.lockerPools.set(finalSize, {
         ...pool,
         available: pool.available - 1,
         version: pool.version + 1,
@@ -273,7 +243,9 @@ export function createBatchDelivery(req: BatchDeliveryRequest): BatchDeliveryRes
         trackingNo: item.trackingNo,
         success: true,
         record,
-        recommendedLocker: recommendedSize,
+        recommendedLocker: finalSize,
+        upgraded,
+        baseLocker: baseSize,
       });
     }
   } finally {

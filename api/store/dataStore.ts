@@ -1,15 +1,21 @@
 import type { LockerPool, LockerSize, PricingTier, DeliveryRecord, Bill } from "../../shared/types";
+import fs from "node:fs";
+import path from "node:path";
 
 const lockerLocks: Record<LockerSize, boolean> = { S: false, M: false, L: false };
 
-export const dataStore = {
-  lockerPools: new Map<LockerSize, LockerPool>([
-    ["S", { size: "S", name: "小号格口", total: 20, available: 15, version: 0, status: "active" }],
-    ["M", { size: "M", name: "中号格口", total: 15, available: 10, version: 0, status: "active" }],
-    ["L", { size: "L", name: "大号格口", total: 8, available: 5, version: 0, status: "active" }],
-  ]),
+const DATA_DIR = path.resolve(process.cwd(), "data");
+const PRICING_FILE = path.join(DATA_DIR, "pricing.json");
 
-  pricingTiers: new Map<string, PricingTier>([
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function loadPricingTiers(): Map<string, PricingTier> {
+  ensureDataDir();
+  const defaults: [string, PricingTier][] = [
     ["t1", { id: "t1", size: "S", startDay: 1, endDay: 2, pricePerDay: 0.5 }],
     ["t2", { id: "t2", size: "S", startDay: 3, endDay: 5, pricePerDay: 1.0 }],
     ["t3", { id: "t3", size: "S", startDay: 6, endDay: -1, pricePerDay: 2.0 }],
@@ -19,7 +25,37 @@ export const dataStore = {
     ["t7", { id: "t7", size: "L", startDay: 1, endDay: 2, pricePerDay: 1.5 }],
     ["t8", { id: "t8", size: "L", startDay: 3, endDay: 5, pricePerDay: 2.5 }],
     ["t9", { id: "t9", size: "L", startDay: 6, endDay: -1, pricePerDay: 5.0 }],
+  ];
+
+  if (fs.existsSync(PRICING_FILE)) {
+    try {
+      const raw = fs.readFileSync(PRICING_FILE, "utf-8");
+      const arr = JSON.parse(raw) as PricingTier[];
+      if (Array.isArray(arr) && arr.length > 0) {
+        return new Map(arr.map((t) => [t.id, t]));
+      }
+    } catch (e) {
+      console.warn("Failed to load pricing data, using defaults", e);
+    }
+  }
+  return new Map(defaults);
+}
+
+export function savePricingTiers(tiers: Map<string, PricingTier>): void {
+  ensureDataDir();
+  const arr = Array.from(tiers.values());
+  fs.writeFileSync(PRICING_FILE, JSON.stringify(arr, null, 2), "utf-8");
+}
+
+
+export const dataStore = {
+  lockerPools: new Map<LockerSize, LockerPool>([
+    ["S", { size: "S", name: "小号格口", total: 20, available: 15, version: 0, status: "active" }],
+    ["M", { size: "M", name: "中号格口", total: 15, available: 10, version: 0, status: "active" }],
+    ["L", { size: "L", name: "大号格口", total: 8, available: 5, version: 0, status: "active" }],
   ]),
+
+  pricingTiers: loadPricingTiers(),
 
   deliveryRecords: new Map<string, DeliveryRecord>(),
   pickupCodeIndex: new Map<string, string>(),
